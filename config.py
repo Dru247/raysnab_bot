@@ -7,3 +7,4 @@ load_dotenv()
 
 telegram_token = os.getenv('TELEGRAM_TOKEN')
 database = "raysnab.db"
+timezone_my = "Europe/Moscow"
