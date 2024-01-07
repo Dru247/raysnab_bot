@@ -21,7 +21,7 @@ schedule_logger.setLevel(level=logging.DEBUG)
 bot = telebot.TeleBot(config.telegram_token)
 
 
-def check_email(imap_server, email_login, email_password):
+def check_email(imap_server, email_login, email_password, teleg_id):
     try:
         mailbox = imaplib.IMAP4_SSL(imap_server)
         mailbox.login(email_login, email_password)
@@ -29,26 +29,55 @@ def check_email(imap_server, email_login, email_password):
         unseen_msg = mailbox.uid('search', "UNSEEN", "ALL")
         id_unseen_msgs = unseen_msg[1][0].decode("utf-8").split()
         logging.info(msg=f"{email_login}: {id_unseen_msgs}")
-        with sq.connect(config.database) as con:
-            cur = con.cursor()
-            cur.execute(f"UPDATE emails SET unseen_status = {len(id_unseen_msgs)} WHERE email = '{email_login}'")
+        if id_unseen_msgs:
+            bot.send_message(
+                teleg_id,
+                text=f"На почте {email_login} есть непрочитанные письма, в кол-ве {len(id_unseen_msgs)} шт."
+            )
     except Exception:
         logging.error("func check email - error", exc_info=True)
+
+
+def get_emails():
+    try:
+        with sq.connect(config.database) as con:
+            cur = con.cursor()
+            cur.execute("""
+                SELECT human, data
+                FROM contacts
+                WHERE contact_type = 1
+            """)
+            contacts = cur.fetchall()
+            for contact in contacts:
+                cur.execute(f"""
+                    SELECT data
+                    FROM contacts
+                    WHERE human = {contact[0]}
+                    AND contact_type = 3
+                """)
+                check_email(
+                    email_login=contact[1],
+                    teleg_id=cur.fetchone()[0],
+                    imap_server=config.imap_yandex,
+                    email_password=config.email_passwords[0]
+                )
+    except Exception:
+        logging.error("func get_emails- error", exc_info=True)
 
 
 def schedule_main():
     schedule.every().day.at(
         "09:00",
         timezone(config.timezone_my)
-        ).do(check_email)
+        ).do(get_emails)
     schedule.every().day.at(
         "15:00",
         timezone(config.timezone_my)
-        ).do(check_email)
+        ).do(get_emails)
     schedule.every().day.at(
         "20:00",
         timezone(config.timezone_my)
-        ).do(check_email)
+        ).do(get_emails)
 
     while True:
         schedule.run_pending()
