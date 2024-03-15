@@ -61,9 +61,9 @@ def get_token():
         with sq.connect(config.database) as con:
             cur = con.cursor()
             cur.execute("SELECT token FROM tokens WHERE datetime_creation > datetime('now', '-1 day')")
-            result = cur.fetchone()[0]
+            result = cur.fetchone()
         if result:
-            return result
+            return result[0]
         else:
             return get_new_token()
     except Exception:
