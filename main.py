@@ -1,12 +1,12 @@
 import config
 import imaplib
 import logging
+import mts_api
 import requests
 import schedule
 import sqlite3 as sq
 import telebot
 import threading
-import time
 
 from pytz import timezone
 from telebot import types
@@ -25,49 +25,6 @@ bot = telebot.TeleBot(config.telegram_token)
 commands = ["МТС.Операции с номерами"]
 keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True)
 keyboard_main.add(*[types.KeyboardButton(comm) for comm in commands])
-
-
-def get_new_token():
-    try:
-        login = config.mts_login
-        password = config.mts_password
-        time_live_token = 86400
-        url = "https://api.mts.ru/token"
-        params = {
-            "grant_type": "client_credentials",
-            "validity_period": time_live_token
-        }
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        response = requests.post(
-            url=url,
-            auth=(login, password),
-            headers=headers,
-            params=params
-            )
-        token = response.json()["access_token"]
-        with sq.connect(config.database) as con:
-            cur = con.cursor()
-            cur.execute(
-                "INSERT INTO tokens (token) VALUES (?)",
-                (token,)
-            )
-        return token
-    except Exception:
-        logging.critical(msg="func get_new_token - error", exc_info=True)
-
-
-def get_token():
-    try:
-        with sq.connect(config.database) as con:
-            cur = con.cursor()
-            cur.execute("SELECT token FROM tokens WHERE datetime_creation > datetime('now', '-1 day')")
-            result = cur.fetchone()
-        if result:
-            return result[0]
-        else:
-            return get_new_token()
-    except Exception:
-        logging.critical(msg="func get_token - error", exc_info=True)
 
 
 def check_user(message):
@@ -118,7 +75,7 @@ def check_numbers(message):
 
 def get_block_status(number):
     try:
-        token = get_token()
+        token = mts_api.get_token()
         url = "https://api.mts.ru/b2b/v1/Product/ProductInfo?category.name=MobileConnectivity"\
               "&marketSegment.characteristic.name=MSISDN"\
               f"&marketSegment.characteristic.value={number}&productOffering.actionAllowed=none"\
@@ -156,81 +113,9 @@ def get_block_info(message, call_data):
         logging.critical(msg="func get_block_info - error", exc_info=True)
 
 
-def mts_block_router(message, call_data):
-    try:
-        call_data, *numbers = call_data.split()
-        if call_data == "mts_block_number":
-            if len(numbers) > 1:
-                threading.Thread(target=many_numbers, args=(numbers, message, add_block)).start()
-            else:
-                number = numbers[0]
-                add_block(number, message)
-        elif call_data == "mts_unblock_number":
-            if len(numbers) > 1:
-                threading.Thread(target=many_numbers, args=(numbers, message, del_block)).start()
-            else:
-                number = numbers[0]
-                del_block(number, message)
-    except Exception:
-        logging.critical(msg="func mts_block_router - error", exc_info=True)
-
-
-def many_numbers(numbers, message, target_func):
-    try:
-        for number in numbers:
-            target_func(number, message)
-            time.sleep(2)
-    except Exception:
-        logging.critical(msg="func many_numbers - error", exc_info=True)
-
-
-def add_block(number, message):
-    try:
-        if not get_block_status(number):
-            token = get_token()
-            url = f"https://api.mts.ru/b2b/v1/Product/ModifyProduct?msisdn={number}"
-            headers = {"Authorization": f"Bearer {token}"}
-            js_data = {"characteristic": [{"name": "MobileConnectivity"}], "item": [{"action": "create", "product": {"externalID": "BL0005", "productCharacteristic": [{"name": "ResourceServiceRequestItemType", "value": "ResourceServiceRequestItem"}]}}]}
-            response = requests.post(
-                url=url,
-                headers=headers,
-                json=js_data
-            )
-            response = response.json()
-            logging.info(msg=f"func add_block: {response}")
-            text = f"{number} - успех"
-        else:
-            text = f"Блокировока на номере {number} уже есть"
-        bot.send_message(chat_id=message.chat.id, text=text)
-    except Exception:
-        logging.critical(msg="func add_block - error", exc_info=True)
-
-
-def del_block(number, message):
-    try:
-        if get_block_status(number):
-            token = get_token()
-            url = f"https://api.mts.ru/b2b/v1/Product/ModifyProduct?msisdn={number}"
-            headers = {"Authorization": f"Bearer {token}"}
-            js_data = {"characteristic": [{"name": "MobileConnectivity"}], "item": [{"action": "delete", "product": {"externalID": "BL0005", "productCharacteristic": [{"name": "ResourceServiceRequestItemType", "value": "ResourceServiceRequestItem"}]}}]}
-            response = requests.post(
-                url=url,
-                headers=headers,
-                json=js_data
-            )
-            response = response.json()
-            logging.info(msg=f"func del_block: {response}")
-            text = f"{number} - успех"
-        else:
-            text = f"Блокировок на {number} нет"
-        bot.send_message(chat_id=message.chat.id, text=text)
-    except Exception:
-        logging.critical(msg="func del_block - error", exc_info=True)
-
-
 def get_balance():
     try:
-        token = get_token()
+        token = mts_api.get_token()
         url = "https://api.mts.ru/b2b/v1/Bills/CheckBalanceByAccount?fields=MOAF&accountNo=277702602686"
         headers = {"Authorization": f"Bearer {token}"}
         response = requests.get(
@@ -242,6 +127,48 @@ def get_balance():
         return balance
     except Exception:
         logging.critical(msg="func get_balance - error", exc_info=True)
+
+
+def mts_add_block(message, call_data):
+    try:
+        call_data, *numbers = call_data.split()
+        all_time = f"Время обработки запроса: ~{round(len(numbers) * 0.5)} мин."
+        bot.send_message(message.chat.id, text=all_time)
+        result = "Результат запроса:"
+        for number in numbers:
+            check, number = mts_api.check_number(number)
+            if check:
+                response = mts_api.add_block(number)
+                if response[0]:
+                    result += f"\n{number}: {response[1]} - Номер в блокировке"
+                else:
+                    result += f"\n{number}: {response[1]} - {response[2]}"
+            else:
+                result += f"\n{number}: Ошибка - Номер некорректен"
+        bot.send_message(message.chat.id, text=result)
+    except Exception:
+        logging.critical(msg="func mts_block_router - error", exc_info=True)
+
+
+def mts_del_block(message, call_data):
+    try:
+        call_data, *numbers = call_data.split()
+        all_time = f"Время обработки запроса: ~{round(len(numbers) * 0.5)} мин."
+        bot.send_message(message.chat.id, text=all_time)
+        result = "Результат запроса:"
+        for number in numbers:
+            check, number = mts_api.check_number(number)
+            if check:
+                response = mts_api.del_block(number)
+                if response[0]:
+                    result += f"\n{number}: {response[1]} - Номер активен"
+                else:
+                    result += f"\n{number}: {response[1]} - {response[2]}"
+            else:
+                result += f"\n{number}: Ошибка - Номер некорректен"
+        bot.send_message(message.chat.id, text=result)
+    except Exception:
+        logging.critical(msg="func mts_block_router - error", exc_info=True)
 
 
 # def add_car(message):
@@ -436,11 +363,11 @@ def help_message(message):
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     if "mts_block_number" in call.data:
-        mts_block_router(call.message, call.data)
+        threading.Thread(target=mts_add_block, args=(call.message, call.data)).start()
     elif "mts_unblock_number" in call.data:
-        mts_block_router(call.message, call.data)
+        threading.Thread(target=mts_del_block, args=(call.message, call.data)).start()
     elif "mts_status_block" in call.data:
-        get_block_info(call.message, call.data)
+        threading.Thread(target=get_block_info, args=(call.message, call.data)).start()
 
 
 @bot.message_handler(content_types=['text'])
