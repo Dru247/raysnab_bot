@@ -339,9 +339,10 @@ def mts_del_block(message, call_data):
 @bot.message_handler(commands=['start'])
 def start_message(message):
     if check_user(message):
+        text = "Привет! Лови клавиатуру!\nЧтобы получить описание введи /help"
         bot.send_message(
             message.chat.id,
-            text="Привет! Лови клавиатуру",
+            text=text,
             reply_markup=keyboard_main
         )
     else:
@@ -351,9 +352,16 @@ def start_message(message):
 @bot.message_handler(commands=['commands', 'help'])
 def help_message(message):
     if check_user(message):
+        text = ("1. Можно вводить команды, недожидаясь завершения другой\n"
+                "2. Можно вводить номера через 7, 8 или без первой цифры, т.е. 79998887766, 89998887766, 9998887766\n"
+                "3. Можно вводить команду с несколькоми номерами, "
+                "нужно вводить их в столбик, без дополнительных знаков. Например:\n"
+                "9998887766\n"
+                "79998887766\n"
+                "89998887766")
         bot.send_message(
             message.chat.id,
-            text="Лови клавиатуру",
+            text=text,
             reply_markup=keyboard_main
         )
     else:
