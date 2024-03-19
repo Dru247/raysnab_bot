@@ -46,23 +46,32 @@ def mts_main(message):
     try:
         if check_user(message):
             msg = bot.send_message(chat_id=message.chat.id, text="Введи номер или номера в столбик")
-            bot.register_next_step_handler(message=msg, callback=check_numbers)
+            bot.register_next_step_handler(message=msg, callback=mts_get_action)
         else:
             bot.send_message(chat_id=message.chat.id, text="В другой раз")
     except Exception:
         logging.critical(msg="func mst_main - error", exc_info=True)
 
 
-def check_numbers(message):
+def mts_get_action(message):
     try:
         keyboard = types.InlineKeyboardMarkup()
-        number = message.text
+        numbers = message.text.replace("\n", ";")
+        with sq.connect(config.database) as con:
+            cur = con.cursor()
+            cur.execute(
+                """
+                INSERT INTO cb_numbers (people_id, number)
+                VALUES ((SELECT human FROM contacts WHERE data = ? AND contact_type = 3), ?)
+                """,
+                (message.chat.id, numbers)
+            )
         keys = [
-            ("Заблокировать", f"mts_block_number {number}"),
-            ("Разблокировать", f"mts_unblock_number {number}")
+            ("Заблокировать", "mts_block_number"),
+            ("Разблокировать", "mts_unblock_number")
         ]
-        if len(number.split("\n")) < 2:
-            keys.append(("Статус блокировки", f"mts_status_block {number}"))
+        if len(numbers.split(";")) < 2:
+            keys.append(("Статус блокировки", f"mts_status_block {numbers}"))
         keyboard.add(*[types.InlineKeyboardButton(text=key[0], callback_data=key[1]) for key in keys])
         bot.send_message(
             message.from_user.id,
@@ -129,9 +138,20 @@ def get_balance():
         logging.critical(msg="func get_balance - error", exc_info=True)
 
 
-def mts_add_block(message, call_data):
+def mts_add_block(message):
     try:
-        call_data, *numbers = call_data.split()
+        with sq.connect(config.database) as con:
+            cur = con.cursor()
+            cur.execute(
+                """
+                SELECT number FROM cb_numbers
+                WHERE people_id = (SELECT human FROM contacts WHERE data = ? AND contact_type = 3)
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (message.chat.id,)
+            )
+            numbers = cur.fetchone()[0].split(";")
         all_time = f"Время обработки запроса: ~{round(len(numbers) * 0.5)} мин."
         bot.send_message(message.chat.id, text=all_time)
         result = "Результат запроса:"
@@ -150,9 +170,20 @@ def mts_add_block(message, call_data):
         logging.critical(msg="func mts_block_router - error", exc_info=True)
 
 
-def mts_del_block(message, call_data):
+def mts_del_block(message):
     try:
-        call_data, *numbers = call_data.split()
+        with sq.connect(config.database) as con:
+            cur = con.cursor()
+            cur.execute(
+                """
+                SELECT number FROM cb_numbers
+                WHERE people_id = (SELECT human FROM contacts WHERE data = ? AND contact_type = 3)
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (message.chat.id,)
+            )
+            numbers = cur.fetchone()[0].split(";")
         all_time = f"Время обработки запроса: ~{round(len(numbers) * 0.5)} мин."
         bot.send_message(message.chat.id, text=all_time)
         result = "Результат запроса:"
@@ -371,9 +402,9 @@ def help_message(message):
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     if "mts_block_number" in call.data:
-        threading.Thread(target=mts_add_block, args=(call.message, call.data)).start()
+        threading.Thread(target=mts_add_block, args=(call.message,)).start()
     elif "mts_unblock_number" in call.data:
-        threading.Thread(target=mts_del_block, args=(call.message, call.data)).start()
+        threading.Thread(target=mts_del_block, args=(call.message,)).start()
     elif "mts_status_block" in call.data:
         threading.Thread(target=get_block_info, args=(call.message, call.data)).start()
 
