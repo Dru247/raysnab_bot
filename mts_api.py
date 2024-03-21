@@ -1,6 +1,8 @@
 import config
+import calendar
 import datetime
 import logging
+import random
 import requests
 import sqlite3 as sq
 import time
@@ -208,3 +210,84 @@ def del_block(number):
         return result, result_text, text_description
     except Exception:
         logging.critical(msg="func del_block - error", exc_info=True)
+
+
+def change_service_later_request(number, service_id, action, dt_action):
+    try:
+        token = get_token()
+        url = f"https://api.mts.ru/b2b/v1/Product/ModifyProduct?msisdn={number}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json"
+        }
+        js_data = {
+            "characteristic": [{"name": "MobileConnectivity"}],
+            "item": [{
+                "action": action,
+                "actionDate": dt_action,
+                "product": {
+                    "externalID": service_id,
+                    "productCharacteristic": [{
+                        "name": "ResourceServiceRequestItemType",
+                        "value": "DelayedResourceServiceRequestItem"
+                    }]
+                }
+            }]
+        }
+        response = requests.post(
+            url=url,
+            headers=headers,
+            json=js_data
+        )
+        response = response.json()
+        logging.info(f"change_service - response: {response}")
+        return response
+    except Exception:
+        logging.critical(msg="func change_service_later_request - error", exc_info=True)
+
+
+def change_service_later(number, service_id, action, dt_action):
+    try:
+        result_var = ["Ошибка", "Успех"]
+        response = change_service_later_request(number, service_id, action, dt_action)
+        if "fault" in response:
+            result = 0
+            text = "Неверный запрос"
+        else:
+            result, text = check_status_request(response)
+        return result, result_var[result], text
+    except Exception:
+        logging.critical(msg="func change_service_later - error", exc_info=True)
+
+
+def del_block_random_hours(number):
+    try:
+        service_id = "BL0005"
+        action = "delete"
+        dt_action = datetime.datetime.now() + datetime.timedelta(hours=random.randint(3, 12))
+        dt_action = dt_action.isoformat()
+        result, result_text, text_description = change_service_later(number, service_id, action, dt_action)
+        return result, result_text, text_description, dt_action
+    except Exception:
+        logging.critical(msg="func add_block_random_hours - error", exc_info=True)
+
+
+def add_block_last_day(number):
+    try:
+        service_id = "BL0005"
+        action = "create"
+        year = datetime.date.today().year
+        month = datetime.date.today().month
+        last_day = calendar.monthrange(year, month)[1]
+        dt_action = datetime.datetime(
+            year=year,
+            month=month,
+            day=last_day,
+            hour=23,
+            minute=random.randint(50, 58),
+            second=random.randint(0, 59),
+        ).isoformat()
+        result, result_text, text_description = change_service_later(number, service_id, action, dt_action)
+        return result, result_text, text_description, dt_action
+    except Exception:
+        logging.critical(msg="func add_block_last_day - error", exc_info=True)

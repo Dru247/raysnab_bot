@@ -67,8 +67,10 @@ def mts_get_action(message):
                 (message.chat.id, numbers)
             )
         keys = [
-            ("Заблокировать", "mts_block_number"),
-            ("Разблокировать", "mts_unblock_number")
+            ("Разблок.", "mts_unblock_number"),
+            ("Разблок. рандом (3-12 ч.)", "mts_unblock_random"),
+            ("Заблок.", "mts_block_number"),
+            ("Заблок. в конце месяца", "mts_block_last_day")
         ]
         if len(numbers.split(";")) < 2:
             keys.append(("Статус блокировки", f"mts_status_block {numbers}"))
@@ -167,7 +169,7 @@ def mts_add_block(message):
                 result += f"\n{number}: Ошибка - Номер некорректен"
         bot.send_message(message.chat.id, text=result)
     except Exception:
-        logging.critical(msg="func mts_block_router - error", exc_info=True)
+        logging.critical(msg="func mts_add_block - error", exc_info=True)
 
 
 def mts_del_block(message):
@@ -199,7 +201,71 @@ def mts_del_block(message):
                 result += f"\n{number}: Ошибка - Номер некорректен"
         bot.send_message(message.chat.id, text=result)
     except Exception:
-        logging.critical(msg="func mts_block_router - error", exc_info=True)
+        logging.critical(msg="func mts_del_block - error", exc_info=True)
+
+
+def mts_del_block_random(message):
+    try:
+        with sq.connect(config.database) as con:
+            cur = con.cursor()
+            cur.execute(
+                """
+                SELECT number FROM cb_numbers
+                WHERE people_id = (SELECT human FROM contacts WHERE data = ? AND contact_type = 3)
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (message.chat.id,)
+            )
+            numbers = cur.fetchone()[0].split(";")
+        all_time = f"Время обработки запроса: ~{round(len(numbers) * 0.5)} мин."
+        bot.send_message(message.chat.id, text=all_time)
+        result = "Результат запроса:"
+        for number in numbers:
+            check, number = mts_api.check_number(number)
+            if check:
+                response = mts_api.del_block_random_hours(number)
+                if response[0]:
+                    result += f"\n{number}: {response[1]} - Время события: {response[3][:-7]}"
+                else:
+                    result += f"\n{number}: {response[1]} - {response[2]}"
+            else:
+                result += f"\n{number}: Ошибка - Номер некорректен"
+        bot.send_message(message.chat.id, text=result)
+    except Exception:
+        logging.critical(msg="func mts_del_block_random - error", exc_info=True)
+
+
+def mts_add_block_last_day(message):
+    try:
+        with sq.connect(config.database) as con:
+            cur = con.cursor()
+            cur.execute(
+                """
+                SELECT number FROM cb_numbers
+                WHERE people_id = (SELECT human FROM contacts WHERE data = ? AND contact_type = 3)
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (message.chat.id,)
+            )
+            numbers = cur.fetchone()[0].split(";")
+        all_time = f"Время обработки запроса: ~{round(len(numbers) * 0.5)} мин."
+        bot.send_message(message.chat.id, text=all_time)
+        result = "Результат запроса:"
+        for number in numbers:
+            check, number = mts_api.check_number(number)
+            if check:
+                response = mts_api.add_block_last_day(number)
+                if response[0]:
+                    result += f"\n{number}: {response[1]} - Время события: {response[3]}"
+                else:
+                    result += f"\n{number}: {response[1]} - {response[2]}"
+            else:
+                result += f"\n{number}: Ошибка - Номер некорректен"
+        bot.send_message(message.chat.id, text=result)
+    except Exception:
+        logging.critical(msg="func mts_add_block_last_day - error", exc_info=True)
 
 
 # def add_car(message):
@@ -389,7 +455,9 @@ def help_message(message):
                 "нужно вводить их в столбик, без дополнительных знаков. Например:\n"
                 "9998887766\n"
                 "79998887766\n"
-                "89998887766")
+                "89998887766"
+                '4. "Разблокировка рандом" разблокирует номера в диапазоне 3-12 часов после отправки команды'
+                '5. "Блоркировка в конце месяца" запускает отложенную блокировку в 23:5N:NN в последний день месяца')
         bot.send_message(
             message.chat.id,
             text=text,
@@ -407,6 +475,10 @@ def callback_query(call):
         threading.Thread(target=mts_del_block, args=(call.message,)).start()
     elif "mts_status_block" in call.data:
         threading.Thread(target=get_block_info, args=(call.message, call.data)).start()
+    elif "mts_unblock_random" in call.data:
+        threading.Thread(target=mts_del_block_random, args=(call.message,)).start()
+    elif "mts_block_last_day" in call.data:
+        threading.Thread(target=mts_add_block_last_day, args=(call.message,)).start()
 
 
 @bot.message_handler(content_types=['text'])
