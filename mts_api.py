@@ -291,3 +291,42 @@ def add_block_last_day(number):
         return result, result_text, text_description, dt_action
     except Exception:
         logging.critical(msg="func add_block_last_day - error", exc_info=True)
+
+
+def request_vacant_sim_card_exchange(number, last_iccid):
+    try:
+        token = get_token()
+        url = "https://api.mts.ru/b2b/v1/Resources/GetAvailableSIM"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "accept": "*/*"
+        }
+        js_data = {"Msisdn": number, "SearchPattern": f"%{last_iccid}"}
+        response = requests.post(
+            url=url,
+            headers=headers,
+            json=js_data
+        )
+        response = response.json()
+        return response
+    except Exception:
+        logging.critical(msg="func request_vacant_sim_card_exchange - error", exc_info=True)
+
+
+def get_vacant_sim_card_exchange(number, last_iccid):
+    try:
+        result_var = ["Ошибка", "Успех"]
+        response = request_vacant_sim_card_exchange(number, last_iccid)
+        if "fault" in response:
+            result, text = 0, "Неверный запрос"
+        else:
+            sim_card = response.get("simList")
+            if not sim_card:
+                result, text = 0, "Нет доступной сим-карты"
+            elif len(sim_card) > 1:
+                result, text = 0, "Сим-карт больше 1"
+            else:
+                result, text = 0, f'{sim_card[0].get("iccId")} {sim_card[0].get("imsi")}'
+        return result, result_var[result], text
+    except Exception:
+        logging.critical(msg="func get_vacant_sim_card_exchange - error", exc_info=True)

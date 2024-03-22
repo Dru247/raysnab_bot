@@ -74,6 +74,7 @@ def mts_get_action(message):
         ]
         if len(numbers.split(";")) < 2:
             keys.append(("Статус блокировки", f"mts_status_block {numbers}"))
+            keys.append(("Замена сим-карты", f"mts_exchange_sim {numbers}"))
         keyboard.add(*[types.InlineKeyboardButton(text=key[0], callback_data=key[1]) for key in keys])
         bot.send_message(
             message.from_user.id,
@@ -268,6 +269,61 @@ def mts_add_block_last_day(message):
         logging.critical(msg="func mts_add_block_last_day - error", exc_info=True)
 
 
+def mts_exchange_sim(message, call_data):
+    try:
+        number = call_data.spli[0]
+        check, number = mts_api.check_number(number)
+        if check:
+            msg = bot.send_message(chat_id=message.chat.id, text="Введи последние 4е знака ICCID")
+            bot.register_next_step_handler(message=msg, callback=mts_exchange_sim_second, number=number)
+    except Exception:
+        logging.critical(msg="func mts_exchange_sim - error", exc_info=True)
+
+
+def mts_exchange_sim_second(message, number):
+    try:
+        last_iccid = message.text
+        if last_iccid.isdigit():
+            result, result_text, text = mts_api.get_vacant_sim_card_exchange(number, last_iccid)
+            if result:
+                iccid, imsi = text.split()
+                keyboard = types.InlineKeyboardMarkup()
+                keyboard.add(
+                    types.InlineKeyboardButton(
+                        text="Да",
+                        callback_data=f"mts_yes_exchange_sim {number};{imsi}"
+                    ),
+                    types.InlineKeyboardButton(
+                        text="Нет",
+                        callback_data=f"mts_no_exchange_sim {number};{imsi}"
+                    )
+                )
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text=f"{number} +> {iccid}. Меняем?",
+                    reply_markup=keyboard)
+            else:
+                bot.send_message(chat_id=message.chat.id, text=f"{result_text} - {text}")
+    except Exception:
+        logging.critical(msg="func mts_exchange_sim_second - error", exc_info=True)
+
+
+def mts_yes_exchange_sim(message, call_data):
+    number, imsi = call_data.split()[1].split(";")
+    # добавить проверку и запуск снятия блокировки
+    response = mts_api.add_block(number)
+    if response[0]:
+        result = f"\n{number}: {response[1]} - Номер в блокировке"
+    else:
+        result = f"\n{number}: {response[1]} - {response[2]}"
+    # Далее команду замены симкарты с проверкой статуса
+    # Далее запрос (Да, Нет) на активацию блокировки
+
+
+def mts_no_exchange_sim(message, call_data):
+    pass
+
+
 # def add_car(message):
 #     try:
 #         inline_keys = []
@@ -433,6 +489,7 @@ def mts_add_block_last_day(message):
 #     elif "add_car_model" in call.data:
 #         add_car_generation(call.message, call.data)
 
+
 @bot.message_handler(commands=['start'])
 def start_message(message):
     if check_user(message):
@@ -479,6 +536,13 @@ def callback_query(call):
         threading.Thread(target=mts_del_block_random, args=(call.message,)).start()
     elif "mts_block_last_day" in call.data:
         threading.Thread(target=mts_add_block_last_day, args=(call.message,)).start()
+    elif "mts_exchange_sim" in call.data:
+        threading.Thread(target=mts_exchange_sim, args=(call.message, call.data)).start()
+    elif "mts_yes_exchange_sim" in call.data:
+        threading.Thread(target=mts_yes_exchange_sim, args=(call.message, call.data)).start()
+    elif "mts_no_exchange_sim" in call.data:
+        threading.Thread(target=mts_no_exchange_sim, args=(call.message, call.data)).start()
+
 
 
 @bot.message_handler(content_types=['text'])
