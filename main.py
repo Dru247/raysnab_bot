@@ -1,3 +1,6 @@
+import pprint
+import time
+
 import config
 import imaplib
 import logging
@@ -85,60 +88,23 @@ def mts_get_action(message):
         logging.critical(msg="func check_numbers - error", exc_info=True)
 
 
-def get_block_status(number):
-    try:
-        token = mts_api.get_token()
-        url = "https://api.mts.ru/b2b/v1/Product/ProductInfo?category.name=MobileConnectivity"\
-              "&marketSegment.characteristic.name=MSISDN"\
-              f"&marketSegment.characteristic.value={number}&productOffering.actionAllowed=none"\
-              "&productOffering.productSpecification.productSpecificationType.name=block&applyTimeZone=true"
-        headers = {"Authorization": f"Bearer {token}"}
-        response = requests.get(
-            url=url,
-            headers=headers
-        )
-        response = response.json()
-        logging.info(msg=f"func get_block_status: {response}")
-        if response:
-            name = response[0]["name"]
-            status = response[0]["status"]
-            start_block = response[0]["validFor"]["startDateTime"]
-            return name, status, start_block
-        else:
-            return 0
-    except Exception:
-        logging.critical(msg="func get_block_status - error", exc_info=True)
-
-
-def get_block_info(message, call_data):
+def mts_block_info(message, call_data):
     try:
         number = call_data.split()[1]
-        result = get_block_status(number)
-        if result:
-            bot.send_message(
-                chat_id=message.chat.id,
-                text=f"Имя: {result[0]}\nСтатус: {result[1]}\nДата активации: {result[2]}"
-            )
+        check, number = mts_api.check_number(number)
+        if check:
+            error, result, text = mts_api.get_block_info(number)
+            if error:
+                msg_text = text
+            elif result:
+                msg_text = f"Добровольная блокировка: ACTIVE\nДата активации: {text}"
+            else:
+                msg_text = "Добровольная блокировка отсутвует"
         else:
-            bot.send_message(chat_id=message.chat.id, text="Блокировка отсутсвует")
+            msg_text = "Неверный формат номера"
+        bot.send_message(chat_id=message.chat.id, text=msg_text)
     except Exception:
-        logging.critical(msg="func get_block_info - error", exc_info=True)
-
-
-def get_balance():
-    try:
-        token = mts_api.get_token()
-        url = "https://api.mts.ru/b2b/v1/Bills/CheckBalanceByAccount?fields=MOAF&accountNo=277702602686"
-        headers = {"Authorization": f"Bearer {token}"}
-        response = requests.get(
-            url=url,
-            headers=headers
-        )
-        response = response.json()
-        balance = response[0]["customerAccountBalance"][0]["remainedAmount"]["amount"]
-        return balance
-    except Exception:
-        logging.critical(msg="func get_balance - error", exc_info=True)
+        logging.critical(msg="func mts_block_info - error", exc_info=True)
 
 
 def mts_add_block(message):
@@ -271,7 +237,7 @@ def mts_add_block_last_day(message):
 
 def mts_exchange_sim(message, call_data):
     try:
-        number = call_data.spli[0]
+        number = call_data.split()[1]
         check, number = mts_api.check_number(number)
         if check:
             msg = bot.send_message(chat_id=message.chat.id, text="Введи последние 4е знака ICCID")
@@ -284,7 +250,7 @@ def mts_exchange_sim_second(message, number):
     try:
         last_iccid = message.text
         if last_iccid.isdigit():
-            result, result_text, text = mts_api.get_vacant_sim_card_exchange(number, last_iccid)
+            error, result, text = mts_api.get_vacant_sim_card_exchange(number, last_iccid)
             if result:
                 iccid, imsi = text.split()
                 keyboard = types.InlineKeyboardMarkup()
@@ -303,25 +269,55 @@ def mts_exchange_sim_second(message, number):
                     text=f"{number} +> {iccid}. Меняем?",
                     reply_markup=keyboard)
             else:
-                bot.send_message(chat_id=message.chat.id, text=f"{result_text} - {text}")
+                bot.send_message(chat_id=message.chat.id, text=f"{text}")
     except Exception:
         logging.critical(msg="func mts_exchange_sim_second - error", exc_info=True)
 
 
 def mts_yes_exchange_sim(message, call_data):
-    number, imsi = call_data.split()[1].split(";")
-    # добавить проверку и запуск снятия блокировки
-    response = mts_api.add_block(number)
-    if response[0]:
-        result = f"\n{number}: {response[1]} - Номер в блокировке"
-    else:
-        result = f"\n{number}: {response[1]} - {response[2]}"
-    # Далее команду замены симкарты с проверкой статуса
-    # Далее запрос (Да, Нет) на активацию блокировки
+    try:
+        number, imsi = call_data.split()[1].split(";")
+        _, result, _ = mts_api.get_block_info(number)
+        if result:
+            mts_api.del_block(number)
+        result, text = mts_api.get_exchange_sim_card(number, imsi)
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(
+            types.InlineKeyboardButton(
+                text="Да",
+                callback_data=f"mts_block_exchange_sim {number}"
+            ),
+            types.InlineKeyboardButton(
+                text="Нет",
+                callback_data=f"mts_noblock_exchange_sim {number}"
+            )
+        )
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=f"{result} - {text}.\nПодключаем Добровольную блокировку?",
+            reply_markup=keyboard)
+    except Exception:
+        logging.critical(msg="func mts_yes_exchange_sim - error", exc_info=True)
 
 
-def mts_no_exchange_sim(message, call_data):
-    pass
+def mts_block_exchange_sim(message, call_data):
+    try:
+        number = call_data.split()[1]
+        response = mts_api.add_block(number)
+        if response[0]:
+            msg_text = f"\n{number}: {response[1]} - Номер в блокировке"
+        else:
+            msg_text = f"\n{number}: {response[1]} - {response[2]}"
+        bot.send_message(chat_id=message.chat.id, text=msg_text)
+    except Exception:
+        logging.critical(msg="func mts_block_exchange_sim - error", exc_info=True)
+
+
+def mts_exchange_no(message):
+    try:
+        bot.send_message(chat_id=message.chat.id, text="Есть отмена")
+    except Exception:
+        logging.critical(msg="func mts_exchange_sim_second - error", exc_info=True)
 
 
 # def add_car(message):
@@ -531,7 +527,7 @@ def callback_query(call):
     elif "mts_unblock_number" in call.data:
         threading.Thread(target=mts_del_block, args=(call.message,)).start()
     elif "mts_status_block" in call.data:
-        threading.Thread(target=get_block_info, args=(call.message, call.data)).start()
+        threading.Thread(target=mts_block_info, args=(call.message, call.data)).start()
     elif "mts_unblock_random" in call.data:
         threading.Thread(target=mts_del_block_random, args=(call.message,)).start()
     elif "mts_block_last_day" in call.data:
@@ -541,8 +537,11 @@ def callback_query(call):
     elif "mts_yes_exchange_sim" in call.data:
         threading.Thread(target=mts_yes_exchange_sim, args=(call.message, call.data)).start()
     elif "mts_no_exchange_sim" in call.data:
-        threading.Thread(target=mts_no_exchange_sim, args=(call.message, call.data)).start()
-
+        threading.Thread(target=mts_exchange_no, args=(call.message,)).start()
+    elif "mts_block_exchange_sim" in call.data:
+        threading.Thread(target=mts_block_exchange_sim, args=(call.message, call.data)).start()
+    elif "mts_noblock_exchange_sim" in call.data:
+        threading.Thread(target=mts_exchange_no, args=(call.message,)).start()
 
 
 @bot.message_handler(content_types=['text'])

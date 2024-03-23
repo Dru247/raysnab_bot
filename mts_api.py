@@ -6,6 +6,7 @@ import random
 import requests
 import sqlite3 as sq
 import time
+import pprint
 
 
 def check_number(number):
@@ -72,12 +73,13 @@ def get_token():
         logging.critical(msg="func get_token - error", exc_info=True)
 
 
-def get_status_request(event_id, date_start, date_end):
+def get_status_request(event_id):
     try:
         token = get_token()
         url = "https://api.mts.ru/b2b/v1/Product/CheckRequestStatusByUUID"
         headers = {
             "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
             "Accept": "application/json"
         }
         js_data = {
@@ -85,9 +87,7 @@ def get_status_request(event_id, date_start, date_end):
                 {"characteristic": []},
                 {"id": event_id}
             ],
-            "validFor": {
-                "startDateTime": date_start,
-                "endDateTime": date_end}
+            "validFor": {}
         }
         response = requests.post(
             url=url,
@@ -101,14 +101,8 @@ def get_status_request(event_id, date_start, date_end):
         logging.critical(msg="func get_status_request - error", exc_info=True)
 
 
-def check_status_request(response):
+def check_status_request(event_id):
     try:
-        event_id = response.get("eventID")
-        event_time = response.get("eventTime")
-        time_start_first = datetime.datetime.fromisoformat(event_time[:-9])
-        time_end_first = time_start_first + datetime.timedelta(days=1)
-        time_start = time_start_first.isoformat()
-        time_end = time_end_first.isoformat()
         statuses = ["Faulted", "Completed", "InProgress"]
         check_status = statuses[2]
         check_text = str()
@@ -118,7 +112,7 @@ def check_status_request(response):
 
         while check_status == statuses[2] and count_attempts <= check_attempt:
             time.sleep(time_step)
-            response = get_status_request(event_id, time_start, time_end)
+            response = get_status_request(event_id)
             check_status = response["relatedParty"][0].get("status")
             check_text = response["relatedParty"][0]["characteristic"][-1].get("value")
             count_attempts += 1
@@ -137,12 +131,31 @@ def check_status_request(response):
             success = 0
             text = "Неизвестная ошибка"
             logging.warning(
-                f"check_status_request: {event_id};{event_time};{time_start};{time_end};{check_status};"
+                f"check_status_request: {event_id};{check_status};"
                 f"{check_text};{count_attempts};{time_step}"
             )
         return success, text
     except Exception:
         logging.critical(msg="func check_status_request - error", exc_info=True)
+
+
+def request_balance(login="277702602686"):
+    try:
+        token = get_token()
+        url = f"https://api.mts.ru/b2b/v1/Bills/CheckBalanceByAccount?fields=MOAF&accountNo={login}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json"
+        }
+        response = requests.get(
+            url=url,
+            headers=headers
+        )
+        response = response.json()
+        balance = response[0]["customerAccountBalance"][0]["remainedAmount"]["amount"]
+        return balance
+    except Exception:
+        logging.critical(msg="func request_balance - error", exc_info=True)
 
 
 def change_service_request(number, service_id, action):
@@ -186,7 +199,8 @@ def change_service(number, service_id, action):
             result = 0
             text = "Неверный запрос"
         else:
-            result, text = check_status_request(response)
+            event_id = response.get("eventID")
+            result, text = check_status_request(event_id)
         return result, result_var[result], text
     except Exception:
         logging.critical(msg="func change_service - error", exc_info=True)
@@ -240,7 +254,7 @@ def change_service_later_request(number, service_id, action, dt_action):
             json=js_data
         )
         response = response.json()
-        logging.info(f"change_service - response: {response}")
+        logging.info(f"change_service_later_request - response: {response}")
         return response
     except Exception:
         logging.critical(msg="func change_service_later_request - error", exc_info=True)
@@ -254,7 +268,8 @@ def change_service_later(number, service_id, action, dt_action):
             result = 0
             text = "Неверный запрос"
         else:
-            result, text = check_status_request(response)
+            event_id = response.get("eventID")
+            result, text = check_status_request(event_id)
         return result, result_var[result], text
     except Exception:
         logging.critical(msg="func change_service_later - error", exc_info=True)
@@ -308,6 +323,7 @@ def request_vacant_sim_card_exchange(number, last_iccid):
             json=js_data
         )
         response = response.json()
+        logging.info(f"request_vacant_sim_card_exchange - response: {response}")
         return response
     except Exception:
         logging.critical(msg="func request_vacant_sim_card_exchange - error", exc_info=True)
@@ -315,18 +331,92 @@ def request_vacant_sim_card_exchange(number, last_iccid):
 
 def get_vacant_sim_card_exchange(number, last_iccid):
     try:
-        result_var = ["Ошибка", "Успех"]
         response = request_vacant_sim_card_exchange(number, last_iccid)
         if "fault" in response:
-            result, text = 0, "Неверный запрос"
+            error, result, text = 1, 0, "Неверный запрос"
         else:
             sim_card = response.get("simList")
             if not sim_card:
-                result, text = 0, "Нет доступной сим-карты"
+                error, result, text = 0, 0, "Нет доступной сим-карты"
             elif len(sim_card) > 1:
-                result, text = 0, "Сим-карт больше 1"
+                error, result, text = 0, 0, "Сим-карт больше 1"
             else:
-                result, text = 0, f'{sim_card[0].get("iccId")} {sim_card[0].get("imsi")}'
-        return result, result_var[result], text
+                error, result, text = 0, 1, f'{sim_card[0].get("iccId")} {sim_card[0].get("imsi")}'
+        return result, result, text
     except Exception:
         logging.critical(msg="func get_vacant_sim_card_exchange - error", exc_info=True)
+
+
+def request_exchange_sim_card(number, imsi):
+    try:
+        token = get_token()
+        url = "https://api.mts.ru/b2b/v1/Resources/ChangeSIMCard"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "accept": "text/plain"
+        }
+        js_data = {"Msisdn": number, "newSimImsi": imsi}
+        response = requests.post(
+            url=url,
+            headers=headers,
+            json=js_data
+        )
+        response = response.text
+        logging.info(f"request_exchange_sim_card - response: {response}")
+        return response
+    except Exception:
+        logging.critical(msg="func request_exchange_sim_card - error", exc_info=True)
+
+
+def get_exchange_sim_card(number, imsi):
+    try:
+        result_var = ["Ошибка", "Успех"]
+        event_id = request_exchange_sim_card(number, imsi)
+        logging.info(msg=f"func get_exchange_sim_card - event_id: {event_id}, {type(event_id)}")
+        # result, text = check_status_request(event_id)
+        result, text = result_var[1], "OK"
+        return result, text
+    except Exception:
+        logging.critical(msg="func get_exchange_sim_card - error", exc_info=True)
+
+
+def request_block_info(number):
+    try:
+        token = get_token()
+        url = ("https://api.mts.ru/b2b/v1/Product/ProductInfo?category.name=MobileConnectivity"
+               f"&marketSegment.characteristic.name=MSISDN&marketSegment.characteristic.value={number}"
+               "&productOffering.actionAllowed=none"
+               "&productOffering.productSpecification.productSpecificationType.name=block&applyTimeZone=true")
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json"
+        }
+        response = requests.get(
+            url=url,
+            headers=headers
+        )
+        response = response.json()
+        logging.info(f"request_block_info - {number} response: {response}")
+        return response
+    except Exception:
+        logging.critical(msg="func request_block_info - error", exc_info=True)
+
+
+def get_block_info(number):
+    try:
+        service_id = "BL0005"
+        error, result, text = 0, 0, str()
+        response = request_block_info(number)
+        if response:
+            if "fault" in response:
+                error, text = 1, "Неверный запрос"
+            else:
+                for service in response:
+                    if service.get("externalID") == service_id:
+                        date_block = service["validFor"].get("startDateTime")[:10]
+                        result, text = 1, date_block
+                        break
+        return error, result, text
+    except Exception:
+        logging.critical(msg="func get_block_info - error", exc_info=True)
