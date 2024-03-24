@@ -6,7 +6,6 @@ import random
 import requests
 import sqlite3 as sq
 import time
-import pprint
 
 
 def check_number(number):
@@ -50,6 +49,7 @@ def request_new_token():
         token = response.json()["access_token"]
         with sq.connect(config.database) as con:
             cur = con.cursor()
+            cur.execute("DELETE FROM tokens")
             cur.execute(
                 "INSERT INTO tokens (token) VALUES (?)",
                 (token,)
@@ -139,12 +139,13 @@ def check_status_request(event_id):
         logging.critical(msg="func check_status_request - error", exc_info=True)
 
 
-def request_balance(login="277702602686"):
+def request_balance(account):
     try:
         token = get_token()
-        url = f"https://api.mts.ru/b2b/v1/Bills/CheckBalanceByAccount?fields=MOAF&accountNo={login}"
+        url = f"https://api.mts.ru/b2b/v1/Bills/CheckBalanceByAccount?fields=MOAF&accountNo={account}"
         headers = {
             "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
             "Accept": "application/json"
         }
         response = requests.get(
@@ -152,10 +153,24 @@ def request_balance(login="277702602686"):
             headers=headers
         )
         response = response.json()
-        balance = response[0]["customerAccountBalance"][0]["remainedAmount"]["amount"]
-        return balance
+        logging.info(f"request_balance - response: {response}")
+        return response
     except Exception:
         logging.critical(msg="func request_balance - error", exc_info=True)
+
+
+def get_balance():
+    try:
+        account = "277702602686"
+        response = request_balance(account)
+        if "fault" in response:
+            error, text = 1, "Неверный запрос"
+        else:
+            balance = response[0]["customerAccountBalance"][0]["remainedAmount"]["amount"]
+            error, text = 0, balance
+        return error, text
+    except Exception:
+        logging.critical(msg="func get_balance - error", exc_info=True)
 
 
 def change_service_request(number, service_id, action):

@@ -1,11 +1,7 @@
-import pprint
-import time
-
 import config
-import imaplib
+# import imaplib
 import logging
 import mts_api
-import requests
 import schedule
 import sqlite3 as sq
 import telebot
@@ -20,8 +16,8 @@ logging.basicConfig(
     filename="logs.log",
     filemode="a",
     format="%(asctime)s %(levelname)s %(message)s")
-# schedule_logger = logging.getLogger('schedule')
-# schedule_logger.setLevel(level=logging.DEBUG)
+schedule_logger = logging.getLogger('schedule')
+schedule_logger.setLevel(level=logging.DEBUG)
 
 bot = telebot.TeleBot(config.telegram_token)
 
@@ -320,99 +316,22 @@ def mts_exchange_no(message):
         logging.critical(msg="func mts_exchange_sim_second - error", exc_info=True)
 
 
-# def add_car(message):
-#     try:
-#         inline_keys = []
-#         with sq.connect(config.database) as con:
-#             cur = con.cursor()
-#             cur.execute("SELECT id, brand FROM car_brands")
-#             result = cur.fetchall()
-#         for record in result:
-#             inline_keys.append(
-#                 types.InlineKeyboardButton(
-#                     text=record[1],
-#                     callback_data=f"add_car_brand {record[0]}"
-#                 )
-#             )
-#         inline_keys.append(
-#             types.InlineKeyboardButton(
-#                 text="Новая марка",
-#                 callback_data="add_new_brand"
-#             )
-#         )
-#         keyboard = types.InlineKeyboardMarkup()
-#         keyboard.add(*inline_keys)
-#         bot.send_message(
-#             message.from_user.id,
-#             text="Выбери марку",
-#             reply_markup=keyboard
-#         )
-#     except Exception:
-#         logging.critical("func add_car - error", exc_info=True)
-
-
-# def add_car_model(message, call_data):
-#     try:
-#         brand_id = call_data.split()[0]
-#         inline_keys = []
-#         with sq.connect(config.database) as con:
-#             cur = con.cursor()
-#             cur.execute("SELECT id, model FROM car_models")
-#             result = cur.fetchall()
-#         for record in result:
-#             inline_keys.append(
-#                 types.InlineKeyboardButton(
-#                     text=record[1],
-#                     callback_data=f"add_car_model {record[0]};{brand_id}"
-#                 )
-#             )
-#         inline_keys.append(
-#             types.InlineKeyboardButton(
-#                 text="Новая модель",
-#                 callback_data="add_new_model"
-#             )
-#         )
-#         keyboard = types.InlineKeyboardMarkup()
-#         keyboard.add(*inline_keys)
-#         bot.send_message(
-#             message.from_user.id,
-#             text="Выбери модель",
-#             reply_markup=keyboard
-#         )
-#     except Exception:
-#         logging.critical("func add_car_model - error", exc_info=True)
-
-
-# def add_car_generation(message, call_data):
-#     try:
-#         brand_id, model_id = call_data.split()[0].split(";")
-#         inline_keys = []
-#         with sq.connect(config.database) as con:
-#             cur = con.cursor()
-#             cur.execute("SELECT id, generation FROM car_generations")
-#             result = cur.fetchall()
-#         for record in result:
-#             inline_keys.append(
-#                 types.InlineKeyboardButton(
-#                     text=record[1],
-#                     callback_data=f"add_car_generation {record[0]};{brand_id};{model_id}"
-#                 )
-#             )
-#         inline_keys.append(
-#             types.InlineKeyboardButton(
-#                 text="Новое поколение",
-#                 callback_data="add_new_generation"
-#             )
-#         )
-#         keyboard = types.InlineKeyboardMarkup()
-#         keyboard.add(*inline_keys)
-#         bot.send_message(
-#             message.from_user.id,
-#             text="Выбери поколение",
-#             reply_markup=keyboard
-#         )
-#     except Exception:
-#         logging.critical("func add_car_generation - error", exc_info=True)
+def mts_get_balance():
+    try:
+        error, result = mts_api.get_balance()
+        if error:
+            msg_text = f"Ошибка - {result}"
+        else:
+            with sq.connect(config.database) as con:
+                cur = con.cursor()
+                cur.execute("SELECT balance FROM mts_balances ORDER BY id LIMIT 1")
+                old_balance = cur.fetchone()[0]
+                cur.execute("INSERT INTO mts_balances (balance) VALUES (?)", (result,))
+            difference = float(result) - old_balance
+            msg_text = f"МТС Баланс: {round(result, 2)} ({round(difference, 2)})"
+        bot.send_message(chat_id=config.telegram_my_id, text=msg_text)
+    except Exception:
+        logging.critical(msg="func mts_get_balance - error", exc_info=True)
 
 
 # def check_email(imap_server, email_login, email_password, teleg_id):
@@ -459,31 +378,11 @@ def mts_exchange_no(message):
 #         logging.error("func get_emails- error", exc_info=True)
 
 
-# def schedule_main():
-#     schedule.every().day.at(
-#         "09:00",
-#         timezone(config.timezone_my)
-#         ).do(get_emails)
-#     schedule.every().day.at(
-#         "15:00",
-#         timezone(config.timezone_my)
-#         ).do(get_emails)
-#     schedule.every().day.at(
-#         "20:00",
-#         timezone(config.timezone_my)
-#         ).do(get_emails)
-#
-#     while True:
-#         schedule.run_pending()
-#         time.sleep(1)
-
-
-# @bot.callback_query_handler(func=lambda call: True)
-# def callback_query(call):
-#     if "add_car_brand" in call.data:
-#         add_car_model(call.message, call.data)
-#     elif "add_car_model" in call.data:
-#         add_car_generation(call.message, call.data)
+def schedule_main():
+    schedule.every().day.at(
+        "07:00",
+        timezone(config.timezone_my)
+    ).do(mts_get_balance)
 
 
 @bot.message_handler(commands=['start'])
@@ -557,5 +456,5 @@ def take_text(message):
 
 
 if __name__ == "__main__":
-    # threading.Thread(target=schedule_main).start()
+    threading.Thread(target=schedule_main).start()
     bot.infinity_polling()
