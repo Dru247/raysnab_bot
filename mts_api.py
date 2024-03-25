@@ -164,11 +164,11 @@ def get_balance():
         account = "277702602686"
         response = request_balance(account)
         if "fault" in response:
-            error, text = 1, "Неверный запрос"
+            error, result = 1, "Неверный запрос"
         else:
             balance = response[0]["customerAccountBalance"][0]["remainedAmount"]["amount"]
-            error, text = 0, balance
-        return error, text
+            error, result = 0, balance
+        return error, result
     except Exception:
         logging.critical(msg="func get_balance - error", exc_info=True)
 

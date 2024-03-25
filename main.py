@@ -5,6 +5,7 @@ import mts_api
 import schedule
 import sqlite3 as sq
 import telebot
+import time
 import threading
 
 from pytz import timezone
@@ -324,7 +325,7 @@ def mts_get_balance():
         else:
             with sq.connect(config.database) as con:
                 cur = con.cursor()
-                cur.execute("SELECT balance FROM mts_balances ORDER BY id LIMIT 1")
+                cur.execute("SELECT balance FROM mts_balances ORDER BY id DESC LIMIT 1")
                 old_balance = cur.fetchone()[0]
                 cur.execute("INSERT INTO mts_balances (balance) VALUES (?)", (result,))
             difference = float(result) - old_balance
@@ -379,10 +380,15 @@ def mts_get_balance():
 
 
 def schedule_main():
-    schedule.every().day.at(
-        "07:00",
-        timezone(config.timezone_my)
-    ).do(mts_get_balance)
+    try:
+        schedule.every().day.at("06:00", timezone(config.timezone_my)).do(mts_get_balance)
+
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
+
+    except Exception:
+        logging.error("func schedule_main - error", exc_info=True)
 
 
 @bot.message_handler(commands=['start'])
@@ -407,8 +413,8 @@ def help_message(message):
                 "нужно вводить их в столбик, без дополнительных знаков. Например:\n"
                 "9998887766\n"
                 "79998887766\n"
-                "89998887766"
-                '4. "Разблокировка рандом" разблокирует номера в диапазоне 3-12 часов после отправки команды'
+                "89998887766\n"
+                '4. "Разблокировка рандом" разблокирует номера в диапазоне 3-12 часов после отправки команды\n'
                 '5. "Блоркировка в конце месяца" запускает отложенную блокировку в 23:5N:NN в последний день месяца')
         bot.send_message(
             message.chat.id,
