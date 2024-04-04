@@ -2,12 +2,14 @@ import config
 # import imaplib
 import logging
 import mts_api
+import openpyxl as op
 import schedule
 import sqlite3 as sq
 import telebot
 import time
 import threading
 
+from io import BytesIO
 from pytz import timezone
 from telebot import types
 
@@ -22,7 +24,10 @@ schedule_logger.setLevel(level=logging.DEBUG)
 
 bot = telebot.TeleBot(config.telegram_token)
 
-commands = ["МТС.Операции с номерами"]
+commands = [
+    "МТС.Операции с номерами",
+    "xlsx.номера"
+]
 keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True)
 keyboard_main.add(*[types.KeyboardButton(comm) for comm in commands])
 
@@ -378,6 +383,49 @@ def mts_get_balance():
 #     except Exception:
 #         logging.error("func get_emails- error", exc_info=True)
 
+def xlsx_numbers(message):
+    try:
+        msg = bot.send_message(chat_id=message.chat.id, text="Загрузи xlsx")
+        bot.register_next_step_handler(message=msg, callback=get_xlsx_numbers)
+    except Exception:
+        logging.error("func xlsx_numbers - error", exc_info=True)
+
+
+def get_xlsx_numbers(message):
+    try:
+        file_id = message.document.file_id
+        file_info = bot.get_file(file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        numbers = {
+            "МТС": [],
+            "МЕГА": [],
+            "СИМ2М": []
+        }
+        excel_doc = op.open(filename=BytesIO(downloaded_file), data_only=True)
+        sheet_names = excel_doc.sheetnames
+        sheet = excel_doc[sheet_names[0]]
+        count_row = 2
+        while sheet.cell(row=count_row, column=1).value is not None:
+            data_row = sheet.cell(row=count_row, column=1).value.split(", ")
+            for data in data_row:
+                data = data.split(": ")
+                if data[0].isdigit() and len(data[0]) == 20:
+                    numbers["МТС"].append(data[1])
+                elif data[0].isdigit() and len(data[0]) == 17:
+                    numbers["МЕГА"].append(data[1])
+                elif data[0].isdigit() and len(data[0]) == 19:
+                    numbers["СИМ2М"].append(data[1])
+            count_row += 1
+        for key in numbers:
+            msg_text = key + "\n"
+            for value in numbers[key]:
+                msg_text += value + "\n"
+            bot.send_message(chat_id=message.chat.id, text=msg_text)
+        excel_doc.close()
+    except Exception:
+        logging.error("func get_xlsx_numbers - error", exc_info=True)
+
+
 
 def schedule_main():
     try:
@@ -454,6 +502,8 @@ def take_text(message):
     if check_user(message):
         if message.text.lower() == commands[0].lower():
             mts_main(message)
+        elif message.text.lower() == commands[1].lower():
+            xlsx_numbers(message)
         else:
             logging.warning(f"func take_text: not understend question: {message.text}")
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')
