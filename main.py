@@ -411,7 +411,6 @@ def get_xlsx_numbers(message):
                 data = data.split(": ")
                 if data[0].isdigit():
                     if data[0][5] != "0":
-                        print(data[0][5])
                         numbers["СИМ2М"].append(data[1])
                     else:
                         if len(data[0]) == 20:
