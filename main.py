@@ -409,12 +409,15 @@ def get_xlsx_numbers(message):
             data_row = sheet.cell(row=count_row, column=1).value.split(", ")
             for data in data_row:
                 data = data.split(": ")
-                if data[0].isdigit() and len(data[0]) == 20:
-                    numbers["МТС"].append(data[1])
-                elif data[0].isdigit() and len(data[0]) == 17:
-                    numbers["МЕГА"].append(data[1])
-                elif data[0].isdigit() and len(data[0]) == 19:
-                    numbers["СИМ2М"].append(data[1])
+                if data[0].isdigit():
+                    if data[0][5] != "0":
+                        print(data[0][5])
+                        numbers["СИМ2М"].append(data[1])
+                    else:
+                        if len(data[0]) == 20:
+                            numbers["МТС"].append(data[1])
+                        else:
+                            numbers["МЕГА"].append(data[1])
             count_row += 1
         for key in numbers:
             msg_text = key + "\n"
