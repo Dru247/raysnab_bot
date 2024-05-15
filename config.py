@@ -18,4 +18,4 @@ email_passwords = [
     os.getenv("PASSWORD_EMAIL_ALEHTIN")
 ]
 warning_balance = 100
-critical_balance = 200
+critical_balance = 1000

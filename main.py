@@ -452,7 +452,7 @@ def get_xlsx_numbers(message):
 def schedule_main():
     try:
         schedule.every().day.at("06:00", timezone(config.timezone_my)).do(mts_get_balance)
-        schedule.every(2).minutes.at(":00").do(mts_check_balance)
+        schedule.every().hour.at(":00").do(mts_check_balance)
 
         while True:
             schedule.run_pending()
