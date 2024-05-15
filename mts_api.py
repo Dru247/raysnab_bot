@@ -477,7 +477,7 @@ def request_balance_numbers(numbers):
         logging.critical(msg="func request_balance_numbers - error", exc_info=True)
 
 
-def get_balance_numbers():
+def get_balance_numbers(balance=config.warning_balance):
     try:
         list_balance = list()
         pagination = True
@@ -490,7 +490,7 @@ def get_balance_numbers():
             result = request_balance_numbers(numbers)
             for record in result:
                 if record.get("remainedAmount"):
-                    if record["remainedAmount"]["amount"] > config.critical_balance:
+                    if record["remainedAmount"]["amount"] > balance:
                         list_balance.append((record["id"], record["remainedAmount"]["amount"]))
             page_num += 1
             time.sleep(1)

@@ -343,6 +343,24 @@ def mts_get_balance():
         logging.critical(msg="func mts_get_balance - error", exc_info=True)
 
 
+def mts_check_balance():
+    try:
+        records = mts_api.get_balance_numbers(config.critical_balance)
+        if records:
+            msg_text = "МТС Перерасход:"
+            for record in records:
+                number, balance = record
+                msg_text += f"\n{number} - {balance}"
+            with sq.connect(config.database) as con:
+                cur = con.cursor()
+                cur.execute("SELECT data FROM contacts WHERE contact_type = 3")
+                result = cur.fetchall()
+                for send in result:
+                    bot.send_message(chat_id=send[0], text=msg_text)
+    except Exception:
+        logging.critical(msg="func mts_check_balance - error", exc_info=True)
+
+
 # def check_email(imap_server, email_login, email_password, teleg_id):
 #     try:
 #         mailbox = imaplib.IMAP4_SSL(imap_server)
@@ -434,6 +452,7 @@ def get_xlsx_numbers(message):
 def schedule_main():
     try:
         schedule.every().day.at("06:00", timezone(config.timezone_my)).do(mts_get_balance)
+        schedule.every(2).minutes.at(":00").do(mts_check_balance)
 
         while True:
             schedule.run_pending()
