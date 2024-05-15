@@ -435,3 +435,66 @@ def get_block_info(number):
         return error, result, text
     except Exception:
         logging.critical(msg="func get_block_info - error", exc_info=True)
+
+
+def request_list_numbers(page_num, account=config.mts_number, page_size=1000):
+    try:
+        token = get_token()
+        url = ("https://api.mts.ru/b2b/v1/Service/HierarchyStructure"
+               f"?account={account}&pageNum={page_num}&pageSize={page_size}")
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json"
+        }
+        response = requests.get(
+            url=url,
+            headers=headers
+        )
+        response = response.json()
+        return response
+    except Exception:
+        logging.critical(msg="func request_list_numbers - error", exc_info=True)
+
+
+def request_balance_numbers(numbers):
+    try:
+        token = get_token()
+        url = "https://api.mts.ru/b2b/v1/Bills/CheckCharges?isBulk=true"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json"
+        }
+        js_data = [{"id": number} for number in numbers]
+        response = requests.post(
+            url=url,
+            headers=headers,
+            json=js_data
+        )
+        response = response.json()
+        logging.info(f"get_status_request - response: {response}")
+        return response
+    except Exception:
+        logging.critical(msg="func request_balance_numbers - error", exc_info=True)
+
+
+def get_balance_numbers():
+    try:
+        list_balance = list()
+        pagination = True
+        page_num = 1
+
+        while pagination:
+            response = request_list_numbers(page_num)
+            pagination = response[0]["partyRole"][0]["customerAccount"][0].get("href")
+            numbers = [number["product"]["productSerialNumber"] for number in response[0]["partyRole"][0]["customerAccount"][0]["productRelationship"]]
+            result = request_balance_numbers(numbers)
+            for record in result:
+                if record.get("remainedAmount"):
+                    if record["remainedAmount"]["amount"] > config.critical_balance:
+                        list_balance.append((record["id"], record["remainedAmount"]["amount"]))
+            page_num += 1
+            time.sleep(1)
+
+        return list_balance
+    except Exception:
+        logging.critical(msg="func get_balance_numbers - error", exc_info=True)

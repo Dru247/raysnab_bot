@@ -334,7 +334,10 @@ def mts_get_balance():
                 old_balance = cur.fetchone()[0]
                 cur.execute("INSERT INTO mts_balances (balance) VALUES (?)", (result,))
             difference = float(result) - old_balance
-            msg_text = f"МТС Баланс: {round(result, 2)} ({round(difference, 2)})"
+            msg_text = f"МТС Баланс: {round(result, 2)} ({round(difference, 2)})\nПерерасход:"
+            for record in mts_api.get_balance_numbers():
+                number, balance = record
+                msg_text += f"\n{number} - {balance}"
         bot.send_message(chat_id=config.telegram_my_id, text=msg_text)
     except Exception:
         logging.critical(msg="func mts_get_balance - error", exc_info=True)
@@ -426,7 +429,6 @@ def get_xlsx_numbers(message):
         excel_doc.close()
     except Exception:
         logging.error("func get_xlsx_numbers - error", exc_info=True)
-
 
 
 def schedule_main():

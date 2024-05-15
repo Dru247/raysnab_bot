@@ -9,6 +9,7 @@ telegram_token = os.getenv("TELEGRAM_TOKEN")
 telegram_my_id = os.getenv("TELEGRAM_MY_ID")
 mts_login = os.getenv("MTS_LOGIN")
 mts_password = os.getenv("MTS_PASSWORD")
+mts_number = os.getenv("MTS_NUMBER")
 database = "raysnab.db"
 timezone_my = "Europe/Moscow"
 
@@ -16,3 +17,4 @@ imap_yandex = "imap.yandex.ru"
 email_passwords = [
     os.getenv("PASSWORD_EMAIL_ALEHTIN")
 ]
+critical_balance = 100
