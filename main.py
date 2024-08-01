@@ -26,6 +26,7 @@ bot = telebot.TeleBot(config.telegram_token)
 
 commands = [
     "МТС.Операции с номерами",
+    "Список болванок МТС",
     "xlsx.номера"
 ]
 keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -449,6 +450,18 @@ def get_xlsx_numbers(message):
         logging.error("func get_xlsx_numbers - error", exc_info=True)
 
 
+def get_request_vacant_sim_card_exchange(message):
+    try:
+        result_text = str()
+        request_list = mts_api.request_vacant_sim_card_exchange()
+        for simcard in request_list.get('simList'):
+            result_text += simcard.get('iccId') + "\n"
+        bot.send_message(chat_id=message.chat.id, text=result_text)
+
+    except Exception:
+        logging.critical(msg="func get_request_vacant_sim_card_exchange - error", exc_info=True)
+
+
 def schedule_main():
     try:
         schedule.every().day.at("06:00", timezone(config.timezone_my)).do(mts_get_balance)
@@ -526,6 +539,8 @@ def take_text(message):
         if message.text.lower() == commands[0].lower():
             mts_main(message)
         elif message.text.lower() == commands[1].lower():
+            get_request_vacant_sim_card_exchange(message)
+        elif message.text.lower() == commands[2].lower():
             xlsx_numbers(message)
         else:
             logging.warning(f"func take_text: not understend question: {message.text}")

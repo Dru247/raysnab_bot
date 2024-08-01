@@ -323,7 +323,7 @@ def add_block_last_day(number):
         logging.critical(msg="func add_block_last_day - error", exc_info=True)
 
 
-def request_vacant_sim_card_exchange(number, last_iccid):
+def request_vacant_sim_card_exchange(number="79162905452", last_iccid=""):
     try:
         token = get_token()
         url = "https://api.mts.ru/b2b/v1/Resources/GetAvailableSIM"
