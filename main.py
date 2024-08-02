@@ -1,5 +1,5 @@
 import config
-# import imaplib
+import imaplib
 import logging
 import mts_api
 import openpyxl as op
@@ -362,21 +362,21 @@ def mts_check_balance():
         logging.critical(msg="func mts_check_balance - error", exc_info=True)
 
 
-# def check_email(imap_server, email_login, email_password, teleg_id):
-#     try:
-#         mailbox = imaplib.IMAP4_SSL(imap_server)
-#         mailbox.login(email_login, email_password)
-#         mailbox.select()
-#         unseen_msg = mailbox.uid('search', "UNSEEN", "ALL")
-#         id_unseen_msgs = unseen_msg[1][0].decode("utf-8").split()
-#         logging.info(msg=f"{email_login}: {id_unseen_msgs}")
-#         if id_unseen_msgs:
-#             bot.send_message(
-#                 teleg_id,
-#                 text=f"На почте {email_login} есть непрочитанные письма, в кол-ве {len(id_unseen_msgs)} шт."
-#             )
-#     except Exception:
-#         logging.error("func check email - error", exc_info=True)
+def check_email(imap_server=config.imap_server_yandex, email_login=config.ya_mary_email_login, email_password=config.ya_mary_email_password, teleg_id=config.id_teleg_mary):
+    try:
+        mailbox = imaplib.IMAP4_SSL(imap_server)
+        mailbox.login(email_login, email_password)
+        mailbox.select()
+        unseen_msg = mailbox.uid('search', "UNSEEN", "ALL")
+        id_unseen_msgs = unseen_msg[1][0].decode("utf-8").split()
+        logging.info(msg=f"{email_login}: {id_unseen_msgs}")
+        if id_unseen_msgs:
+            bot.send_message(
+                teleg_id,
+                text=f"На почте {email_login} есть непрочитанные письма, в кол-ве {len(id_unseen_msgs)} шт."
+            )
+    except Exception:
+        logging.error("func check email - error", exc_info=True)
 
 
 # def get_emails():
@@ -466,6 +466,9 @@ def schedule_main():
     try:
         schedule.every().day.at("06:00", timezone(config.timezone_my)).do(mts_get_balance)
         schedule.every().hour.at(":00").do(mts_check_balance)
+        schedule.every().day.at("09:00", timezone(config.timezone_my)).do(mts_get_balance)
+        schedule.every().day.at("15:00", timezone(config.timezone_my)).do(mts_get_balance)
+        schedule.every().day.at("21:00", timezone(config.timezone_my)).do(mts_get_balance)
 
         while True:
             schedule.run_pending()
