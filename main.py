@@ -466,9 +466,9 @@ def schedule_main():
     try:
         schedule.every().day.at("06:00", timezone(config.timezone_my)).do(mts_get_balance)
         schedule.every().hour.at(":00").do(mts_check_balance)
-        schedule.every().day.at("09:00", timezone(config.timezone_my)).do(mts_get_balance)
-        schedule.every().day.at("15:00", timezone(config.timezone_my)).do(mts_get_balance)
-        schedule.every().day.at("21:00", timezone(config.timezone_my)).do(mts_get_balance)
+        schedule.every().day.at("09:00", timezone(config.timezone_my)).do(get_request_vacant_sim_card_exchange)
+        schedule.every().day.at("15:00", timezone(config.timezone_my)).do(get_request_vacant_sim_card_exchange)
+        schedule.every().day.at("21:00", timezone(config.timezone_my)).do(get_request_vacant_sim_card_exchange)
 
         while True:
             schedule.run_pending()
