@@ -29,7 +29,7 @@ commands = [
     "МТС.Операции с номерами",
     "Список болванок МТС",
     "xlsx.номера",
-    'Трекер->СИМ-карта'
+    'Плательщик->СИМ-карты'
 ]
 keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True)
 keyboard_main.add(*[types.KeyboardButton(comm) for comm in commands])
@@ -452,24 +452,25 @@ def get_xlsx_numbers(message):
         logging.error("func get_xlsx_numbers - error", exc_info=True)
 
 
-def get_sim_tracker(message):
+def get_payer_sim_cards(message):
     try:
-        msg = bot.send_message(chat_id=message.chat.id, text="Напиши imei")
-        bot.register_next_step_handler(message=msg, callback=request_sim_tracker)
+        msg = bot.send_message(chat_id=message.chat.id, text="Напиши id плательщика")
+        bot.register_next_step_handler(message=msg, callback=request_sim_cards)
     except Exception:
-        logging.error("func get_sim_tracker - error", exc_info=True)
+        logging.error("func get_payer_sim_cards - error", exc_info=True)
 
 
-def request_sim_tracker(message):
+def request_sim_cards(message):
     try:
-        imei = message.text
-        sim_cards = dj_api.get_sim(terminal_imei=imei)
-        msg_text = str()
-        for sim in sim_cards:
-            msg_text += str(sim) + "\n"
-        bot.send_message(chat_id=message.chat.id, text=msg_text)
+        id_payer = int(message.text)
+        sim_cards = dj_api.get_payer_sim_cards(id_payer)
+        for sim_list in sim_cards:
+            msg_text = str()
+            for sim in sim_list:
+                msg_text += str(sim) + "\n"
+            bot.send_message(chat_id=message.chat.id, text=msg_text)
     except Exception:
-        logging.error("func request_sim_tracker - error", exc_info=True)
+        logging.error("func request_sim_cards - error", exc_info=True)
 
 
 def get_request_vacant_sim_card_exchange(message):
@@ -568,7 +569,7 @@ def take_text(message):
         elif message.text.lower() == commands[2].lower():
             xlsx_numbers(message)
         elif message.text.lower() == commands[3].lower():
-            get_sim_tracker(message)
+            get_payer_sim_cards(message)
         else:
             logging.warning(f"func take_text: not understend question: {message.text}")
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')

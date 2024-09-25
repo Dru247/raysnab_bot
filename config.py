@@ -23,3 +23,4 @@ imap_server_yandex = "imap.yandex.ru"
 ya_mary_email_login = os.getenv("YA_EMAIL_MARY_LOGIN")
 ya_mary_email_password = os.getenv("YA_EMAIL_MARY_PASSWORD")
 id_teleg_mary = os.getenv("TELEG_ID_MARY")
+token_drf = os.getenv("TOKEN_DRF")
