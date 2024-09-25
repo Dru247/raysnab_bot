@@ -323,7 +323,8 @@ def add_block_last_day(number):
         logging.critical(msg="func add_block_last_day - error", exc_info=True)
 
 
-def request_vacant_sim_card_exchange(number="79162905452", last_iccid=""):
+def request_vacant_sim_cards(number="79162905452", last_iccid=""):
+    """API запрос списка 'болванок'"""
     try:
         token = get_token()
         url = "https://api.mts.ru/b2b/v1/Resources/GetAvailableSIM"
@@ -338,15 +339,73 @@ def request_vacant_sim_card_exchange(number="79162905452", last_iccid=""):
             json=js_data
         )
         response = response.json()
-        logging.info(f"request_vacant_sim_card_exchange - response: {response}")
         return response
     except Exception:
-        logging.critical(msg="func request_vacant_sim_card_exchange - error", exc_info=True)
+        logging.critical(msg="func request_vacant_sim_cards - error", exc_info=True)
+
+
+def get_vacant_sim_cards():
+    """Выдаёт обработанный список ICC 'болванок'"""
+    try:
+        request_list = request_vacant_sim_cards()
+        return [simcard.get('iccId') for simcard in request_list.get('simList')]
+    except Exception:
+        logging.critical(msg="func get_vacant_sim_cards - error", exc_info=True)
+
+
+def request_list_numbers(page_num, account="277702602686", page_size=1000):
+    """API запрос списка ICC + Number"""
+    try:
+        token = "446e2228-e7f9-3f4c-ba5e-8c3708fd4cff"
+        url = ("https://api.mts.ru/b2b/v1/Service/HierarchyStructure"
+               f"?account={account}&pageNum={page_num}&pageSize={page_size}")
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json"
+        }
+        response = requests.get(
+            url=url,
+            headers=headers
+        )
+        response = response.json()
+        return response
+    except Exception:
+        logging.critical(msg="func request_list_numbers - error", exc_info=True)
+
+
+def get_list_numbers():
+    """Возвращает обработанный список ICC + Number"""
+    try:
+        pagination = True
+        numbers = list()
+        page_num = 1
+
+        while pagination:
+            response = request_list_numbers(page_num)
+            pagination = response[0]["partyRole"][0]["customerAccount"][0].get("href")
+            [numbers.append((number["product"]["productCharacteristic"][1]["value"], number["product"]["productSerialNumber"])) for number in response[0]["partyRole"][0]["customerAccount"][0]["productRelationship"]]
+            page_num += 1
+            time.sleep(1)
+
+        return numbers
+    except Exception:
+        logging.critical(msg="func get_list_numbers - error", exc_info=True)
+
+
+def get_list_all_icc():
+    """Возвращает полный список ICC ((ICC + Numbers) + 'болванки')"""
+    try:
+        list_icc_numbers = get_list_numbers()
+        [list_icc_numbers.append((icc,)) for icc in get_vacant_sim_cards()]
+        return list_icc_numbers
+    except Exception:
+        logging.critical(msg="func get_list_all_icc - error", exc_info=True)
+
 
 
 def get_vacant_sim_card_exchange(number, last_iccid):
     try:
-        response = request_vacant_sim_card_exchange(number, last_iccid)
+        response = request_vacant_sim_cards(number, last_iccid)
         if "fault" in response:
             error, result, text = 1, 0, "Неверный запрос"
         else:
@@ -437,25 +496,6 @@ def get_block_info(number):
         logging.critical(msg="func get_block_info - error", exc_info=True)
 
 
-def request_list_numbers(page_num, account=config.mts_number, page_size=1000):
-    try:
-        token = get_token()
-        url = ("https://api.mts.ru/b2b/v1/Service/HierarchyStructure"
-               f"?account={account}&pageNum={page_num}&pageSize={page_size}")
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json"
-        }
-        response = requests.get(
-            url=url,
-            headers=headers
-        )
-        response = response.json()
-        return response
-    except Exception:
-        logging.critical(msg="func request_list_numbers - error", exc_info=True)
-
-
 def request_balance_numbers(numbers):
     try:
         token = get_token()
@@ -477,6 +517,7 @@ def request_balance_numbers(numbers):
         logging.critical(msg="func request_balance_numbers - error", exc_info=True)
 
 
+# нужно изменить, т.к. функция дублируется
 def get_balance_numbers(balance=config.warning_balance):
     try:
         list_balance = list()

@@ -25,32 +25,52 @@ drf_token = config.token_drf
 
 
 def main_request(url, token):
-    headers = {"Authorization": f"Token {token}"}
-    response = requests.get(
-        url=url,
-        headers=headers
-    ).json()
-    return response
+    """Главный API запрос"""
+    try:
+        headers = {"Authorization": f"Token {token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception:
+        logging.critical(msg="func dj_api.main_request - error", exc_info=True)
+
+
+def get_list_sim_cards():
+    """Возвращает список ICC и номеров"""
+    try:
+        response = main_request(url_1, drf_token)
+        sim_list = [(row['id'], row['operator'], row['number'], row['icc'], row['terminal']) for row in response]
+        return sim_list
+    except Exception:
+        logging.critical(msg="func dj_api.get_list_sim_cards - error", exc_info=True)
 
 
 def get_payer_terminals(payer):
-    response = main_request(url_3, drf_token)
-    terminals_id = [row['terminal'] for row in response if row['payer'] == payer]
-    return terminals_id
+    try:
+        response = main_request(url_3, drf_token)
+        terminals_id = [row['terminal'] for row in response if row['payer'] == payer]
+        return terminals_id
+    except Exception:
+        logging.critical(msg="func dj_api.get_payer_terminals - error", exc_info=True)
 
 
 def get_payer_sim_cards(payer):
-    terminals_id = get_payer_terminals(payer)
-    sim_cards = main_request(url_1, drf_token)
-    result = [(row['operator'], row['number'], row['icc']) for row in sim_cards if row['terminal'] in terminals_id]
-    mts = ['МТС:']
-    mega = ['МЕГА:']
-    sim2m = ['СИМ2М:']
-    for sim in result:
-        if sim[0] == 1:
-            mega.append(sim[1])
-        elif sim[0] == 2:
-            mts.append(sim[1])
-        else:
-            sim2m.append(sim[1])
-    return mts, mega, sim2m
+    try:
+        terminals_id = get_payer_terminals(payer)
+        sim_cards = main_request(url_1, drf_token)
+        result = [(row['operator'], row['number'], row['icc']) for row in sim_cards if row['terminal'] in terminals_id]
+        mts = ['МТС:']
+        mega = ['МЕГА:']
+        sim2m = ['СИМ2М:']
+        for sim in result:
+            if sim[0] == 1:
+                mega.append(sim[1])
+            elif sim[0] == 2:
+                mts.append(sim[1])
+            else:
+                sim2m.append(sim[1])
+        return mts, mega, sim2m
+    except Exception:
+        logging.critical(msg="func dj_api.get_payer_sim_cards - error", exc_info=True)

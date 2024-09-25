@@ -29,7 +29,8 @@ commands = [
     "МТС.Операции с номерами",
     "Список болванок МТС",
     "xlsx.номера",
-    'Плательщик->СИМ-карты'
+    'Плательщик->СИМ-карты',
+    'Сравнить номера'
 ]
 keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True)
 keyboard_main.add(*[types.KeyboardButton(comm) for comm in commands])
@@ -452,37 +453,88 @@ def get_xlsx_numbers(message):
         logging.error("func get_xlsx_numbers - error", exc_info=True)
 
 
-def get_payer_sim_cards(message):
+def get_number_payer_sim_cards(message):
+    """Запрашивает номер плательщика"""
     try:
         msg = bot.send_message(chat_id=message.chat.id, text="Напиши id плательщика")
-        bot.register_next_step_handler(message=msg, callback=request_sim_cards)
+        bot.register_next_step_handler(message=msg, callback=get_list_payer_sim_cards)
     except Exception:
         logging.error("func get_payer_sim_cards - error", exc_info=True)
 
 
-def request_sim_cards(message):
+def get_list_payer_sim_cards(message):
+    """Отправляет сообщение со списком номеров сим-карт по плательщику"""
     try:
         id_payer = int(message.text)
         sim_cards = dj_api.get_payer_sim_cards(id_payer)
         for sim_list in sim_cards:
-            msg_text = str()
-            for sim in sim_list:
-                msg_text += str(sim) + "\n"
-            bot.send_message(chat_id=message.chat.id, text=msg_text)
+            bot.send_message(
+                chat_id=message.chat.id,
+                text='\n'.join(sim_list)
+            )
     except Exception:
-        logging.error("func request_sim_cards - error", exc_info=True)
+        logging.error("func get_list_payer_sim_cards - error", exc_info=True)
 
 
-def get_request_vacant_sim_card_exchange(message):
+def get_list_vacant_sim_cards(message):
+    """Отправляет сообщение со списком 'болванок'"""
     try:
-        result_text = str()
-        request_list = mts_api.request_vacant_sim_card_exchange()
-        for simcard in request_list.get('simList'):
-            result_text += simcard.get('iccId') + "\n"
-        bot.send_message(chat_id=message.chat.id, text=result_text)
+        max_char_icc_in_msg = 190
+        sim_cards = mts_api.get_vacant_sim_cards()
+        sim_cards_msgs = list()
 
+        while len(sim_cards) > max_char_icc_in_msg:
+            sim_cards_msgs.append(sim_cards[:190])
+            sim_cards = sim_cards[190:]
+
+        sim_cards_msgs.append(sim_cards)
+
+        for msg in sim_cards_msgs:
+            bot.send_message(
+                chat_id=message.chat.id,
+                text='\n'.join(msg)
+            )
     except Exception:
-        logging.critical(msg="func get_request_vacant_sim_card_exchange - error", exc_info=True)
+        logging.critical(msg="func get_list_vacant_sim_cards - error", exc_info=True)
+
+
+def check_mts_sim_cards():
+    """Сравнивает симкарты на проете и сайте МТС"""
+    try:
+        def cut_msg(icc_list):
+            max_char_icc_in_msg = 190
+            icc_msgs = list()
+
+            while len(icc_list) > max_char_icc_in_msg:
+                icc_msgs.append(icc_list[:190])
+                icc_list = icc_list[190:]
+
+            icc_msgs.append(icc_list)
+            return icc_msgs
+
+
+        mts_id = 2
+        prj_mts_sim_cards = [(num[3], num[2]) for num in dj_api.get_list_sim_cards() if num[1] == mts_id]
+        site_mts_sim_cards = mts_api.get_list_all_icc()
+        prj_mts_icc = [sim[0] for sim in prj_mts_sim_cards]
+        site_mts_icc = [sim[0] for sim in site_mts_sim_cards]
+        msg_text = 'На проекте есть, на МТС нет\n'
+        icc_list = [icc for icc in prj_mts_icc if icc not in site_mts_icc]
+        for msg in cut_msg(icc_list):
+            bot.send_message(
+                chat_id=config.telegram_my_id,
+                text=msg_text + '\n'.join(msg)
+            )
+        msg_text = 'На МТС есть, на проекте нет\n'
+        icc_list = [icc for icc in site_mts_icc if icc not in prj_mts_icc]
+        for msg in cut_msg(icc_list):
+            bot.send_message(
+                chat_id=config.telegram_my_id,
+                text=msg_text + '\n'.join(msg)
+            )
+    except Exception:
+        logging.critical(msg="func check_mts_sim_cards - error", exc_info=True)
+
 
 
 def schedule_main():
@@ -565,11 +617,13 @@ def take_text(message):
         if message.text.lower() == commands[0].lower():
             mts_main(message)
         elif message.text.lower() == commands[1].lower():
-            get_request_vacant_sim_card_exchange(message)
+            get_list_vacant_sim_cards(message)
         elif message.text.lower() == commands[2].lower():
             xlsx_numbers(message)
         elif message.text.lower() == commands[3].lower():
-            get_payer_sim_cards(message)
+            get_number_payer_sim_cards(message)
+        elif message.text.lower() == commands[4].lower():
+            check_mts_sim_cards()
         else:
             logging.warning(f"func take_text: not understend question: {message.text}")
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')
