@@ -356,7 +356,7 @@ def get_vacant_sim_cards():
 def request_list_numbers(page_num, account="277702602686", page_size=1000):
     """API запрос списка ICC + Number"""
     try:
-        token = "446e2228-e7f9-3f4c-ba5e-8c3708fd4cff"
+        token = get_token()
         url = ("https://api.mts.ru/b2b/v1/Service/HierarchyStructure"
                f"?account={account}&pageNum={page_num}&pageSize={page_size}")
         headers = {
@@ -471,7 +471,6 @@ def request_block_info(number):
             headers=headers
         )
         response = response.json()
-        logging.info(f"request_block_info - {number} response: {response}")
         return response
     except Exception:
         logging.critical(msg="func request_block_info - error", exc_info=True)
@@ -511,31 +510,26 @@ def request_balance_numbers(numbers):
             json=js_data
         )
         response = response.json()
-        logging.info(f"get_status_request - response: {response}")
         return response
     except Exception:
         logging.critical(msg="func request_balance_numbers - error", exc_info=True)
 
 
-# нужно изменить, т.к. функция дублируется
-def get_balance_numbers(balance=config.warning_balance):
+def get_balance_numbers(crit_balance=0):
+    """Возвращает список (Номер, баланс) с возможности отфильтровки"""
     try:
-        list_balance = list()
-        pagination = True
-        page_num = 1
+        iccs_numbers = get_list_numbers()
+        num_balances = list()
 
-        while pagination:
-            response = request_list_numbers(page_num)
-            pagination = response[0]["partyRole"][0]["customerAccount"][0].get("href")
-            numbers = [number["product"]["productSerialNumber"] for number in response[0]["partyRole"][0]["customerAccount"][0]["productRelationship"]]
-            result = request_balance_numbers(numbers)
-            for record in result:
+        while len(iccs_numbers) > 1000:
+            response_result = request_balance_numbers([num[1] for num in iccs_numbers[:1000]])
+            for record in response_result:
                 if record.get("remainedAmount"):
-                    if record["remainedAmount"]["amount"] > balance:
-                        list_balance.append((record["id"], record["remainedAmount"]["amount"]))
-            page_num += 1
+                    if record["remainedAmount"]["amount"] > crit_balance:
+                        num_balances.append((record["id"], record["remainedAmount"]["amount"]))
+            iccs_numbers = iccs_numbers[1000:]
             time.sleep(1)
 
-        return list_balance
+        return num_balances
     except Exception:
         logging.critical(msg="func get_balance_numbers - error", exc_info=True)

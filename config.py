@@ -7,6 +7,7 @@ load_dotenv()
 
 telegram_token = os.getenv("TELEGRAM_TOKEN")
 telegram_my_id = os.getenv("TELEGRAM_MY_ID")
+telegram_maks_id = os.getenv("TELEGRAM_MAKS_ID")
 mts_login = os.getenv("MTS_LOGIN")
 mts_password = os.getenv("MTS_PASSWORD")
 mts_number = os.getenv("MTS_NUMBER")
@@ -17,7 +18,7 @@ imap_yandex = "imap.yandex.ru"
 email_passwords = [
     os.getenv("PASSWORD_EMAIL_ALEHTIN")
 ]
-warning_balance = 100
+warning_balance = 50
 critical_balance = 1000
 imap_server_yandex = "imap.yandex.ru"
 ya_mary_email_login = os.getenv("YA_EMAIL_MARY_LOGIN")

@@ -1,3 +1,5 @@
+from pyexpat.errors import messages
+
 import config
 import dj_api
 import imaplib
@@ -326,7 +328,8 @@ def mts_exchange_no(message):
         logging.critical(msg="func mts_exchange_sim_second - error", exc_info=True)
 
 
-def mts_get_balance():
+def mts_get_account_balance():
+    """Сравнивает, записывает и отправляет баланс лицевого счёта"""
     try:
         error, result = mts_api.get_balance()
         if error:
@@ -338,29 +341,31 @@ def mts_get_balance():
                 old_balance = cur.fetchone()[0]
                 cur.execute("INSERT INTO mts_balances (balance) VALUES (?)", (result,))
             difference = float(result) - old_balance
-            msg_text = f"МТС Баланс: {round(result, 2)} ({round(difference, 2)})\nПерерасход:"
-            for record in mts_api.get_balance_numbers():
-                number, balance = record
-                msg_text += f"\n{number} - {balance}"
+            msg_text = f"МТС Баланс: {round(result, 2)} ({round(difference, 2)})"
         bot.send_message(chat_id=config.telegram_my_id, text=msg_text)
     except Exception:
-        logging.critical(msg="func mts_get_balance - error", exc_info=True)
+        logging.critical(msg="func mts_get_account_balance - error", exc_info=True)
 
 
-def mts_check_balance():
+def mts_check_num_balance(balance=0, morning=False):
+    """Проверяет номера МТС на КРИТИЧЕСКИЙ перерасход и отправляет сотрудникам в чат"""
     try:
-        records = mts_api.get_balance_numbers(config.critical_balance)
+        records = mts_api.get_balance_numbers(balance)
         if records:
             msg_text = "МТС Перерасход:"
             for record in records:
                 number, balance = record
                 msg_text += f"\n{number} - {balance}"
-            with sq.connect(config.database) as con:
-                cur = con.cursor()
-                cur.execute("SELECT data FROM contacts WHERE contact_type = 3")
-                result = cur.fetchall()
-                for send in result:
-                    bot.send_message(chat_id=send[0], text=msg_text)
+            if morning:
+                chats = [config.telegram_my_id]
+            else:
+                with sq.connect(config.database) as con:
+                    cur = con.cursor()
+                    cur.execute("SELECT data FROM contacts WHERE contact_type = 3")
+                    result = cur.fetchall()
+                    chats = [chat[0] for chat in result]
+            for chat in chats:
+                bot.send_message(chat_id=chat, text=msg_text)
     except Exception:
         logging.critical(msg="func mts_check_balance - error", exc_info=True)
 
@@ -498,7 +503,7 @@ def get_list_vacant_sim_cards(message):
         logging.critical(msg="func get_list_vacant_sim_cards - error", exc_info=True)
 
 
-def check_mts_sim_cards():
+def check_mts_sim_cards(message, morning=False):
     """Сравнивает симкарты на проете и сайте МТС"""
     try:
         def cut_msg(icc_list):
@@ -520,27 +525,46 @@ def check_mts_sim_cards():
         site_mts_icc = [sim[0] for sim in site_mts_sim_cards]
         msg_text = 'На проекте есть, на МТС нет\n'
         icc_list = [icc for icc in prj_mts_icc if icc not in site_mts_icc]
+        list_text_msgs = list()
         for msg in cut_msg(icc_list):
-            bot.send_message(
-                chat_id=config.telegram_my_id,
-                text=msg_text + '\n'.join(msg)
-            )
+            list_text_msgs.append(msg_text + '\n'.join(msg))
         msg_text = 'На МТС есть, на проекте нет\n'
         icc_list = [icc for icc in site_mts_icc if icc not in prj_mts_icc]
         for msg in cut_msg(icc_list):
-            bot.send_message(
-                chat_id=config.telegram_my_id,
-                text=msg_text + '\n'.join(msg)
-            )
+            list_text_msgs.append(msg_text + '\n'.join(msg))
+        if morning:
+            list_chat_id = [config.telegram_my_id, config.telegram_maks_id]
+        else:
+            list_chat_id = [message.chat.id]
+        for chat in list_chat_id:
+            for msg in list_text_msgs:
+                bot.send_message(
+                    chat_id=chat,
+                    text=msg
+                )
     except Exception:
         logging.critical(msg="func check_mts_sim_cards - error", exc_info=True)
+
+
+def morning_check():
+    """
+    Утренний скрипт: проверка баланса ЛС,
+    проверка перерасхода номеров,
+    проверка наличие симкарт на проете и МТС
+    """
+    try:
+        mts_get_account_balance()
+        mts_check_num_balance(balance=config.warning_balance, morning=True)
+        check_mts_sim_cards(0, morning=True)
+    except Exception:
+        logging.critical(msg="func morning_check - error", exc_info=True)
 
 
 
 def schedule_main():
     try:
-        schedule.every().day.at("06:00", timezone(config.timezone_my)).do(mts_get_balance)
-        schedule.every().hour.at(":00").do(mts_check_balance)
+        schedule.every().day.at("06:00", timezone(config.timezone_my)).do(morning_check)
+        schedule.every().hour.at(":00").do(mts_check_num_balance, balance=config.critical_balance)
         schedule.every().day.at("09:00", timezone(config.timezone_my)).do(check_email)
         schedule.every().day.at("15:00", timezone(config.timezone_my)).do(check_email)
         schedule.every().day.at("21:00", timezone(config.timezone_my)).do(check_email)
@@ -623,7 +647,7 @@ def take_text(message):
         elif message.text.lower() == commands[3].lower():
             get_number_payer_sim_cards(message)
         elif message.text.lower() == commands[4].lower():
-            check_mts_sim_cards()
+            check_mts_sim_cards(message)
         else:
             logging.warning(f"func take_text: not understend question: {message.text}")
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')
