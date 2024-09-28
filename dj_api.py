@@ -48,9 +48,10 @@ def get_list_sim_cards():
 
 
 def get_payer_terminals(payer):
+    """API запрос на списк терминало по плательщику"""
     try:
         response = main_request(url_3, drf_token)
-        terminals_id = [row['terminal'] for row in response if row['payer'] == payer]
+        terminals_id = [row['terminal'] for row in response if row['payer'] == payer and row['terminal']]
         return terminals_id
     except Exception:
         logging.critical(msg="func dj_api.get_payer_terminals - error", exc_info=True)

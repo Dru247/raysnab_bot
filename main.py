@@ -352,6 +352,7 @@ def mts_check_num_balance(balance=0, morning=False):
     try:
         records = mts_api.get_balance_numbers(balance)
         if records:
+            records.sort(key=lambda a: a[1], reverse=True)
             msg_text = "МТС Перерасход:"
             for record in records:
                 number, balance = record
