@@ -1,5 +1,3 @@
-from pyexpat.errors import messages
-
 import config
 import dj_api
 import imaplib
@@ -28,17 +26,23 @@ schedule_logger.setLevel(level=logging.DEBUG)
 bot = telebot.TeleBot(config.telegram_token)
 
 commands = [
-    "МТС.Операции с номерами",
-    "Список болванок МТС",
-    "xlsx.номера",
+    'Статус блокировки',
+    'Разблокировать номер',
+    'Разблокировать номер рандом (3-12 ч.)',
+    'Заблокировать номер',
+    'Заблокировать в конце месяца',
+    'Замена сим-карты',
+    'Список болванок МТС',
     'Плательщик->СИМ-карты',
-    'Сравнить номера'
+    'Сравнить номера',
+    'xlsx.номера'
 ]
-keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True)
+keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
 keyboard_main.add(*[types.KeyboardButton(comm) for comm in commands])
 
 
 def check_user(message):
+    """Проверяет пользоватиеля на право выполнения команд"""
     try:
         user_id = message.chat.id
         with sq.connect(config.database) as con:
@@ -53,53 +57,40 @@ def check_user(message):
         logging.critical(msg="func check_user - error", exc_info=True)
 
 
-def mts_main(message):
+def check_number(number):
+    """Проверает номера симок на корректность"""
     try:
-        if check_user(message):
-            msg = bot.send_message(chat_id=message.chat.id, text="Введи номер или номера в столбик")
-            bot.register_next_step_handler(message=msg, callback=mts_get_action)
+        number = number.strip()
+        if number.isdigit():
+            len_number = len(number)
+            if len_number == 10:
+                number = "7" + number
+                return True, number
+            elif len_number == 11:
+                number = "7" + number[1:]
+                return True, number
+            else:
+                logging.info(msg=f"func check_number: {number}")
+                return False, number
         else:
-            bot.send_message(chat_id=message.chat.id, text="В другой раз")
+            logging.info(msg=f"func check_number: {number}")
+            return False, number
     except Exception:
-        logging.critical(msg="func mst_main - error", exc_info=True)
+        logging.critical(msg="func check_number - error", exc_info=True)
 
-
-def mts_get_action(message):
+def mts_request_number(message):
+    """Запрашивает номер симки"""
     try:
-        keyboard = types.InlineKeyboardMarkup()
-        numbers = message.text.replace("\n", ";")
-        with sq.connect(config.database) as con:
-            cur = con.cursor()
-            cur.execute(
-                """
-                INSERT INTO cb_numbers (people_id, number)
-                VALUES ((SELECT human FROM contacts WHERE data = ? AND contact_type = 3), ?)
-                """,
-                (message.chat.id, numbers)
-            )
-        keys = [
-            ("Разблок.", "mts_unblock_number"),
-            ("Разблок. рандом (3-12 ч.)", "mts_unblock_random"),
-            ("Заблок.", "mts_block_number"),
-            ("Заблок. в конце месяца", "mts_block_last_day")
-        ]
-        if len(numbers.split(";")) < 2:
-            keys.append(("Статус блокировки", f"mts_status_block {numbers}"))
-            keys.append(("Замена сим-карты", f"mts_exchange_sim {numbers}"))
-        keyboard.add(*[types.InlineKeyboardButton(text=key[0], callback_data=key[1]) for key in keys])
-        bot.send_message(
-            message.from_user.id,
-            text="Выбери команду",
-            reply_markup=keyboard
-        )
+        msg = bot.send_message(chat_id=message.chat.id, text="Введи номер сим-карты")
+        bot.register_next_step_handler(message=msg, callback=mts_block_info)
     except Exception:
-        logging.critical(msg="func check_numbers - error", exc_info=True)
+        logging.critical(msg="func mts_request_number - error", exc_info=True)
 
 
-def mts_block_info(message, call_data):
+def mts_block_info(message):
     try:
-        number = call_data.split()[1]
-        check, number = mts_api.check_number(number)
+        number = message.text
+        check, number = check_number(number)
         if check:
             error, result, text = mts_api.get_block_info(number)
             if error:
@@ -115,138 +106,62 @@ def mts_block_info(message, call_data):
         logging.critical(msg="func mts_block_info - error", exc_info=True)
 
 
-def mts_add_block(message):
+def mts_request_numbers(message, target_func):
+    """Запрашивает список номер на удаление или добавления услуг"""
     try:
-        with sq.connect(config.database) as con:
-            cur = con.cursor()
-            cur.execute(
-                """
-                SELECT number FROM cb_numbers
-                WHERE people_id = (SELECT human FROM contacts WHERE data = ? AND contact_type = 3)
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                (message.chat.id,)
-            )
-            numbers = cur.fetchone()[0].split(";")
-        all_time = f"Время обработки запроса: ~{round(len(numbers) * 0.5)} мин."
-        bot.send_message(message.chat.id, text=all_time)
-        result = "Результат запроса:"
-        for number in numbers:
-            check, number = mts_api.check_number(number)
-            if check:
-                response = mts_api.add_block(number)
-                if response[0]:
-                    result += f"\n{number}: {response[1]} - Номер в блокировке"
-                else:
-                    result += f"\n{number}: {response[1]} - {response[2]}"
-            else:
-                result += f"\n{number}: Ошибка - Номер некорректен"
-        bot.send_message(message.chat.id, text=result)
+        msg = bot.send_message(chat_id=message.chat.id, text="Введи номер или номера в столбик")
+        bot.register_next_step_handler(message=msg, callback=mts_add_del_services, target_func=target_func)
     except Exception:
-        logging.critical(msg="func mts_add_block - error", exc_info=True)
+        logging.critical(msg="func mts_request_numbers - error", exc_info=True)
 
 
-def mts_del_block(message):
+def mts_add_del_services(message, target_func):
+    """Удаляет и добляет услуги номеров"""
     try:
-        with sq.connect(config.database) as con:
-            cur = con.cursor()
-            cur.execute(
-                """
-                SELECT number FROM cb_numbers
-                WHERE people_id = (SELECT human FROM contacts WHERE data = ? AND contact_type = 3)
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                (message.chat.id,)
-            )
-            numbers = cur.fetchone()[0].split(";")
-        all_time = f"Время обработки запроса: ~{round(len(numbers) * 0.5)} мин."
+        numbers = message.text.split('\n')
+        all_time = f'Время обработки запроса: ~{round(len(numbers) * 2)} сек.'
         bot.send_message(message.chat.id, text=all_time)
-        result = "Результат запроса:"
-        for number in numbers:
-            check, number = mts_api.check_number(number)
-            if check:
-                response = mts_api.del_block(number)
-                if response[0]:
-                    result += f"\n{number}: {response[1]} - Номер активен"
-                else:
-                    result += f"\n{number}: {response[1]} - {response[2]}"
+        successfully_requests = list()
+        final_list = list()
+        for number_old in numbers:
+            check, number = check_number(number_old)
+            if not check:
+                final_list.append((False, number_old, 'Ошибка - Номер некорректен"'))
             else:
-                result += f"\n{number}: Ошибка - Номер некорректен"
-        bot.send_message(message.chat.id, text=result)
-    except Exception:
-        logging.critical(msg="func mts_del_block - error", exc_info=True)
-
-
-def mts_del_block_random(message):
-    try:
-        with sq.connect(config.database) as con:
-            cur = con.cursor()
-            cur.execute(
-                """
-                SELECT number FROM cb_numbers
-                WHERE people_id = (SELECT human FROM contacts WHERE data = ? AND contact_type = 3)
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                (message.chat.id,)
-            )
-            numbers = cur.fetchone()[0].split(";")
-        all_time = f"Время обработки запроса: ~{round(len(numbers) * 0.5)} мин."
-        bot.send_message(message.chat.id, text=all_time)
-        result = "Результат запроса:"
-        for number in numbers:
-            check, number = mts_api.check_number(number)
-            if check:
-                response = mts_api.del_block_random_hours(number)
-                if response[0]:
-                    result += f"\n{number}: {response[1]} - Время события: {response[3][:-7]}"
+                success, response_text = target_func(number)
+                if success:
+                    successfully_requests.append((success, number, response_text))
                 else:
-                    result += f"\n{number}: {response[1]} - {response[2]}"
-            else:
-                result += f"\n{number}: Ошибка - Номер некорректен"
-        bot.send_message(message.chat.id, text=result)
+                    final_list.append((success, number, response_text))
+                time.sleep(1)
+
+        for success, num, event_id_request in successfully_requests:
+            success, response_text = mts_api.check_status_request(event_id_request)
+            final_list.append((success, num, response_text))
+
+        final_list.sort(key=lambda a: a[0])
+        text_msg = 'Результат запроса:\n'
+        for record in final_list:
+            text_msg += f'{record[1]} - {record[2]}\n'
+
+        bot.send_message(message.chat.id, text=text_msg)
     except Exception:
-        logging.critical(msg="func mts_del_block_random - error", exc_info=True)
+        logging.critical(msg="func mts_add_del_services - error", exc_info=True)
 
 
-def mts_add_block_last_day(message):
+def mts_exchange_sim_request_number(message):
+    """Запрашивает номер симки для замены"""
     try:
-        with sq.connect(config.database) as con:
-            cur = con.cursor()
-            cur.execute(
-                """
-                SELECT number FROM cb_numbers
-                WHERE people_id = (SELECT human FROM contacts WHERE data = ? AND contact_type = 3)
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                (message.chat.id,)
-            )
-            numbers = cur.fetchone()[0].split(";")
-        all_time = f"Время обработки запроса: ~{round(len(numbers) * 0.5)} мин."
-        bot.send_message(message.chat.id, text=all_time)
-        result = "Результат запроса:"
-        for number in numbers:
-            check, number = mts_api.check_number(number)
-            if check:
-                response = mts_api.add_block_last_day(number)
-                if response[0]:
-                    result += f"\n{number}: {response[1]} - Время события: {response[3]}"
-                else:
-                    result += f"\n{number}: {response[1]} - {response[2]}"
-            else:
-                result += f"\n{number}: Ошибка - Номер некорректен"
-        bot.send_message(message.chat.id, text=result)
+        msg = bot.send_message(chat_id=message.chat.id, text="Введи номер симки для замены (79..)")
+        bot.register_next_step_handler(message=msg, callback=mts_exchange_sim)
     except Exception:
-        logging.critical(msg="func mts_add_block_last_day - error", exc_info=True)
+        logging.critical(msg="func mts_exchange_sim_request_number - error", exc_info=True)
 
 
-def mts_exchange_sim(message, call_data):
+def mts_exchange_sim(message):
     try:
-        number = call_data.split()[1]
-        check, number = mts_api.check_number(number)
+        number = message.text
+        check, number = check_number(number)
         if check:
             msg = bot.send_message(chat_id=message.chat.id, text="Введи последние 4е знака ICCID")
             bot.register_next_step_handler(message=msg, callback=mts_exchange_sim_second, number=number)
@@ -333,7 +248,7 @@ def mts_get_account_balance():
     try:
         error, result = mts_api.get_balance()
         if error:
-            msg_text = f"Ошибка - {result}"
+            msg_text = f'Ошибка - {result}'
         else:
             with sq.connect(config.database) as con:
                 cur = con.cursor()
@@ -614,19 +529,7 @@ def help_message(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
-    if "mts_block_number" in call.data:
-        threading.Thread(target=mts_add_block, args=(call.message,)).start()
-    elif "mts_unblock_number" in call.data:
-        threading.Thread(target=mts_del_block, args=(call.message,)).start()
-    elif "mts_status_block" in call.data:
-        threading.Thread(target=mts_block_info, args=(call.message, call.data)).start()
-    elif "mts_unblock_random" in call.data:
-        threading.Thread(target=mts_del_block_random, args=(call.message,)).start()
-    elif "mts_block_last_day" in call.data:
-        threading.Thread(target=mts_add_block_last_day, args=(call.message,)).start()
-    elif "mts_exchange_sim" in call.data:
-        threading.Thread(target=mts_exchange_sim, args=(call.message, call.data)).start()
-    elif "mts_yes_exchange_sim" in call.data:
+    if "mts_yes_exchange_sim" in call.data:
         threading.Thread(target=mts_yes_exchange_sim, args=(call.message, call.data)).start()
     elif "mts_no_exchange_sim" in call.data:
         threading.Thread(target=mts_exchange_no, args=(call.message,)).start()
@@ -640,15 +543,25 @@ def callback_query(call):
 def take_text(message):
     if check_user(message):
         if message.text.lower() == commands[0].lower():
-            mts_main(message)
+            mts_request_number(message)
         elif message.text.lower() == commands[1].lower():
-            get_list_vacant_sim_cards(message)
+            mts_request_numbers(message, target_func=mts_api.del_block)
         elif message.text.lower() == commands[2].lower():
-            xlsx_numbers(message)
+             mts_request_numbers(message, target_func=mts_api.del_block_random_hours)
         elif message.text.lower() == commands[3].lower():
-            get_number_payer_sim_cards(message)
+            mts_request_numbers(message, target_func=mts_api.add_block)
         elif message.text.lower() == commands[4].lower():
-            check_mts_sim_cards(message)
+            mts_request_numbers(message, target_func=mts_api.add_block_last_day)
+        elif message.text.lower() == commands[5].lower():
+            mts_exchange_sim_request_number(message)
+        elif message.text.lower() == commands[6].lower():
+             get_list_vacant_sim_cards(message)
+        elif message.text.lower() == commands[7].lower():
+            get_number_payer_sim_cards(message)
+        elif message.text.lower() == commands[8].lower():
+             check_mts_sim_cards(message)
+        elif message.text.lower() == commands[9].lower():
+             xlsx_numbers(message)
         else:
             logging.warning(f"func take_text: not understend question: {message.text}")
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')

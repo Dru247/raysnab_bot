@@ -8,27 +8,6 @@ import sqlite3 as sq
 import time
 
 
-def check_number(number):
-    try:
-        number = number.strip()
-        if number.isdigit():
-            len_number = len(number)
-            if len_number == 10:
-                number = "7" + number
-                return 1, number
-            elif len_number == 11:
-                number = "7" + number[1:]
-                return 1, number
-            else:
-                logging.info(msg=f"func check_number: {number}")
-                return 0, number
-        else:
-            logging.info(msg=f"func check_number: {number}")
-            return 0, number
-    except Exception:
-        logging.critical(msg="func check_number - error", exc_info=True)
-
-
 def request_new_token():
     try:
         login = config.mts_login
@@ -102,37 +81,36 @@ def get_status_request(event_id):
 
 
 def check_status_request(event_id):
+    """Проверка статуса выполнения API запроса"""
     try:
         statuses = ["Faulted", "Completed", "InProgress"]
         check_status = statuses[2]
         check_text = str()
-        check_attempt = 10
+        check_attempt = 60
         count_attempts = 0
-        time_step = 5
 
         while check_status == statuses[2] and count_attempts <= check_attempt:
-            time.sleep(time_step)
             response = get_status_request(event_id)
-            check_status = response["relatedParty"][0].get("status")
-            check_text = response["relatedParty"][0]["characteristic"][-1].get("value")
+            check_status = response.get("relatedParty")[0].get("status")
+            check_text = response.get("relatedParty")[0].get("characteristic")[-1].get("value")
             count_attempts += 1
-            time_step += 10
+            time.sleep(1)
 
         if count_attempts > check_attempt:
-            success = 0
+            success = False
             text = "Превышен лимит проверок статуса обращения"
         elif check_status == statuses[0]:
-            success = 0
+            success = False
             text = check_text
         elif check_status == statuses[1]:
-            success = 1
+            success = True
             text = "Положительный ответ от сервера"
         else:
-            success = 0
+            success = False
             text = "Неизвестная ошибка"
             logging.warning(
                 f"check_status_request: {event_id};{check_status};"
-                f"{check_text};{count_attempts};{time_step}"
+                f"{check_text};{count_attempts}"
             )
         return success, text
     except Exception:
@@ -174,6 +152,7 @@ def get_balance():
 
 
 def change_service_request(number, service_id, action):
+    """API Запрос на изменение сервиса в номере"""
     try:
         token = get_token()
         url = f"https://api.mts.ru/b2b/v1/Product/ModifyProduct?msisdn={number}"
@@ -200,43 +179,45 @@ def change_service_request(number, service_id, action):
             json=js_data
         )
         response = response.json()
-        logging.info(f"change_service - response: {response}")
         return response
     except Exception:
-        logging.critical(msg="func change_service - error", exc_info=True)
+        logging.critical(msg="func change_service_request - error", exc_info=True)
 
 
-def change_service(number, service_id, action):
+def change_service_handler(number, service_id, action):
+    """Обработчик запроса на изменение сервиса в номере"""
     try:
-        result_var = ["Ошибка", "Успех"]
         response = change_service_request(number, service_id, action)
         if "fault" in response:
-            result = 0
+            logging.info(f"change_service error - response: {response}")
+            success = False
             text = "Неверный запрос"
         else:
-            event_id = response.get("eventID")
-            result, text = check_status_request(event_id)
-        return result, result_var[result], text
+            text = response.get("eventID")
+            success = True
+        return success, text
     except Exception:
-        logging.critical(msg="func change_service - error", exc_info=True)
+        logging.critical(msg="func change_service_handler - error", exc_info=True)
 
 
 def add_block(number):
+    """Добавление блокировке на номере"""
     try:
         service_id = "BL0005"
         action = "create"
-        result, result_text, text_description = change_service(number, service_id, action)
-        return result, result_text, text_description
+        success, result_text = change_service_handler(number, service_id, action)
+        return success, result_text
     except Exception:
         logging.critical(msg="func add_block - error", exc_info=True)
 
 
 def del_block(number):
+    """Удаление блокировки на номере"""
     try:
         service_id = "BL0005"
         action = "delete"
-        result, result_text, text_description = change_service(number, service_id, action)
-        return result, result_text, text_description
+        success, result_text = change_service_handler(number, service_id, action)
+        return success, result_text
     except Exception:
         logging.critical(msg="func del_block - error", exc_info=True)
 
@@ -275,34 +256,37 @@ def change_service_later_request(number, service_id, action, dt_action):
         logging.critical(msg="func change_service_later_request - error", exc_info=True)
 
 
-def change_service_later(number, service_id, action, dt_action):
+def change_service_later_handler(number, service_id, action, dt_action):
+    """Обработчик запроса на изменение сервиса в номере с отсрочкой"""
     try:
-        result_var = ["Ошибка", "Успех"]
         response = change_service_later_request(number, service_id, action, dt_action)
         if "fault" in response:
-            result = 0
+            logging.info(f"change_service_later error - response: {response}")
+            success = False
             text = "Неверный запрос"
         else:
-            event_id = response.get("eventID")
-            result, text = check_status_request(event_id)
-        return result, result_var[result], text
+            text = response.get("eventID")
+            success = True
+        return success, text
     except Exception:
         logging.critical(msg="func change_service_later - error", exc_info=True)
 
 
 def del_block_random_hours(number):
+    """Удаляет блокировку на номере рандом от 3х до 12 часов"""
     try:
         service_id = "BL0005"
         action = "delete"
         dt_action = datetime.datetime.now() + datetime.timedelta(hours=random.randint(3, 12))
         dt_action = dt_action.isoformat()
-        result, result_text, text_description = change_service_later(number, service_id, action, dt_action)
-        return result, result_text, text_description, dt_action
+        success, result_text = change_service_later_handler(number, service_id, action, dt_action)
+        return success, result_text
     except Exception:
         logging.critical(msg="func add_block_random_hours - error", exc_info=True)
 
 
 def add_block_last_day(number):
+    """Отложенна добавляет блокировку на номер в последние минуты месяца"""
     try:
         service_id = "BL0005"
         action = "create"
@@ -317,8 +301,8 @@ def add_block_last_day(number):
             minute=random.randint(50, 58),
             second=random.randint(0, 59),
         ).isoformat()
-        result, result_text, text_description = change_service_later(number, service_id, action, dt_action)
-        return result, result_text, text_description, dt_action
+        success, result_text = change_service_later_handler(number, service_id, action, dt_action)
+        return success, result_text
     except Exception:
         logging.critical(msg="func add_block_last_day - error", exc_info=True)
 
@@ -396,7 +380,7 @@ def get_list_all_icc():
     """Возвращает полный список ICC ((ICC + Numbers) + 'болванки')"""
     try:
         list_icc_numbers = get_list_numbers()
-        [list_icc_numbers.append((icc,)) for icc in get_vacant_sim_cards()]
+        list_icc_numbers.extend([(icc, None) for icc in get_vacant_sim_cards()])
         return list_icc_numbers
     except Exception:
         logging.critical(msg="func get_list_all_icc - error", exc_info=True)
@@ -476,6 +460,7 @@ def request_block_info(number):
         logging.critical(msg="func request_block_info - error", exc_info=True)
 
 
+#нужно поправить
 def get_block_info(number):
     try:
         service_id = "BL0005"
@@ -487,7 +472,7 @@ def get_block_info(number):
             else:
                 for service in response:
                     if service.get("externalID") == service_id:
-                        date_block = service["validFor"].get("startDateTime")[:10]
+                        date_block = service.get("validFor").get("startDateTime")[:10]
                         result, text = 1, date_block
                         break
         return error, result, text
