@@ -18,7 +18,7 @@ imap_yandex = "imap.yandex.ru"
 email_passwords = [
     os.getenv("PASSWORD_EMAIL_ALEHTIN")
 ]
-warning_balance = 50
+warning_balance = 40
 critical_balance = 1000
 imap_server_yandex = "imap.yandex.ru"
 ya_mary_email_login = os.getenv("YA_EMAIL_MARY_LOGIN")

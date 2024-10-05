@@ -422,32 +422,45 @@ def get_list_vacant_sim_cards(message):
 def check_mts_sim_cards(message, morning=False):
     """Сравнивает симкарты на проете и сайте МТС"""
     try:
-        def cut_msg(icc_list):
-            max_char_icc_in_msg = 190
-            icc_msgs = list()
+        def cut_msg(text_msg):
+            """Обрезает сообщения по максимальному значению символов в сообщении Телеграм"""
+            max_char_msg_telegram = 4096
+            msgs = list()
+            list_rows = text_msg.split('\n')
+            one_msg = str()
+            len_char = 0
 
-            while len(icc_list) > max_char_icc_in_msg:
-                icc_msgs.append(icc_list[:190])
-                icc_list = icc_list[190:]
+            for row in list_rows:
+                len_char += len(row) + 1
+                if len_char < max_char_msg_telegram:
+                    one_msg += row + '\n'
+                else:
+                    msgs.append(one_msg)
+                    one_msg = str()
+                    len_char = 0
 
-            icc_msgs.append(icc_list)
-            return icc_msgs
+            msgs.append(one_msg)
+            return msgs
 
 
         mts_id = 2
         prj_mts_sim_cards = [(num[3], num[2]) for num in dj_api.get_list_sim_cards() if num[1] == mts_id]
         site_mts_sim_cards = mts_api.get_list_all_icc()
-        prj_mts_icc = [sim[0] for sim in prj_mts_sim_cards]
-        site_mts_icc = [sim[0] for sim in site_mts_sim_cards]
-        msg_text = 'На проекте есть, на МТС нет\n'
-        icc_list = [icc for icc in prj_mts_icc if icc not in site_mts_icc]
-        list_text_msgs = list()
-        for msg in cut_msg(icc_list):
-            list_text_msgs.append(msg_text + '\n'.join(msg))
-        msg_text = 'На МТС есть, на проекте нет\n'
-        icc_list = [icc for icc in site_mts_icc if icc not in prj_mts_icc]
-        for msg in cut_msg(icc_list):
-            list_text_msgs.append(msg_text + '\n'.join(msg))
+        # msg_text = 'На проекте есть, на МТС нет'
+        # another_sim = set(prj_mts_sim_cards) - set(site_mts_sim_cards)
+        # for num in another_sim:
+        #     msg_text += f'\n{num[0]} {num[1]}'
+        # list_text_msgs = cut_msg(msg_text)
+        # msg_text = 'На МТС есть, на проекте нет'
+        # another_sim = set(site_mts_sim_cards) - set(prj_mts_sim_cards)
+        # for num in another_sim:
+        #     msg_text += f'\n{num[0]} {num[1]}'
+        # list_text_msgs.append(cut_msg(msg_text))
+        another_sim = set(prj_mts_sim_cards) ^ set(site_mts_sim_cards)
+        msg_text = f'Разница {len(another_sim)} шт.'
+        for num in another_sim:
+            msg_text += f'\n{num[0]} {num[1]}'
+        list_text_msgs = cut_msg(msg_text)
         if morning:
             list_chat_id = [config.telegram_my_id, config.telegram_maks_id]
         else:
@@ -458,6 +471,7 @@ def check_mts_sim_cards(message, morning=False):
                     chat_id=chat,
                     text=msg
                 )
+
     except Exception:
         logging.critical(msg="func check_mts_sim_cards - error", exc_info=True)
 
