@@ -48,7 +48,7 @@ def get_list_sim_cards():
 
 
 def get_payer_terminals(payer):
-    """API запрос на списк терминало по плательщику"""
+    """API запрос на списк терминалов по плательщику"""
     try:
         response = main_request(url_3, drf_token)
         terminals_id = [row['terminal'] for row in response if row['payer'] == payer and row['terminal']]
@@ -75,3 +75,59 @@ def get_payer_sim_cards(payer):
         return mts, mega, sim2m
     except Exception:
         logging.critical(msg="func dj_api.get_payer_sim_cards - error", exc_info=True)
+
+
+def get_status_sim_cards():
+    """API запрос на списк активных\неактивных терминалов """
+    try:
+        mts_id = 2
+        response = main_request(url_3, drf_token)
+        status_terms = {row['terminal']: row['active'] for row in response if row['terminal']}
+        # "Возникает ошибка если сим-карта стоит в терминале, который на руках у кого-то (ид терминала не находит среди объектов)"
+        print(status_terms[4813])
+        status_sims = {sim[2]: status_terms[sim[4]] for sim in get_list_sim_cards() if sim[4] and sim[1] == mts_id and sim[2]}
+        return status_sims
+    except Exception:
+        logging.critical(msg="func dj_api.get_status_sim_cards - error", exc_info=True)
+
+
+def request_user_list():
+    """Запрос списка пользователей на серверах"""
+    try:
+        url = 'http://89.169.136.83/api/v1/userlist/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception:
+        logging.critical(msg="func dj_api.request_user_list - error", exc_info=True)
+
+
+def request_object_list():
+    """Запрос списка пользователей на серверах"""
+    try:
+        url = 'http://89.169.136.83/api/v1/objects/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception:
+        logging.critical(msg="func dj_api.request_object_list - error", exc_info=True)
+
+
+def request_terminal_list():
+    """Запрос списка пользователей на серверах"""
+    try:
+        url = 'http://89.169.136.83/api/v1/termlist/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception:
+        logging.critical(msg="func dj_api.request_terminal_list - error", exc_info=True)

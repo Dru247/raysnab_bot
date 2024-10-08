@@ -1,3 +1,4 @@
+import api_glonasssoft
 import config
 import dj_api
 import imaplib
@@ -35,7 +36,9 @@ commands = [
     'Список болванок МТС',
     'Плательщик->СИМ-карты',
     'Сравнить номера',
-    'xlsx.номера'
+    'xlsx.номера',
+    'Проверка активности сим-карт',
+    'Сравнить GLONASSsoft'
 ]
 keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
 keyboard_main.add(*[types.KeyboardButton(comm) for comm in commands])
@@ -476,6 +479,36 @@ def check_mts_sim_cards(message, morning=False):
         logging.critical(msg="func check_mts_sim_cards - error", exc_info=True)
 
 
+def check_active_mts_sim_cards(message):
+    try:
+        print(dj_api.get_status_sim_cards())
+        # mts_id = 2
+        # prj_mts_sim_cards = [(num[3], num[2]) for num in dj_api.get_list_sim_cards() if num[1] == mts_id]
+        # site_mts_sim_cards = mts_api.get_list_all_icc()
+    except Exception:
+        logging.critical(msg="func check_active_mts_sim_cards - error", exc_info=True)
+
+
+def check_glonasssoft_dj_objects(message):
+    try:
+        gonasssoft_objs = [obj.get('imei') for obj in api_glonasssoft.request_list_objects(config.glonasssoft_org_id)]
+        # gonasssoft_objs = [(obj.get('name'), obj.get('imei')) for obj in api_glonasssoft.request_list_objects(config.glonasssoft_org_id)]
+        # user_list_target_serv = [user.get('id') for user in dj_api.request_user_list() if user.get('server') == 4]
+        # project_objs = [(obj.get('name'), obj.get('terminal')) for obj in dj_api.request_object_list() if obj.get('wialon_user') in user_list_target_serv and obj.get('active')]
+        # terminals = {term.get('id'): term.get('imei') for term in dj_api.request_terminal_list()}
+        # for num, obj in enumerate(project_objs):
+        #     project_objs[num] = obj[0], terminals[obj[1]]
+        user_list_target_serv = [user.get('id') for user in dj_api.request_user_list() if user.get('server') == 4]
+        project_objs = [obj.get('terminal') for obj in dj_api.request_object_list() if obj.get('wialon_user') in user_list_target_serv and obj.get('active')]
+        terminals = {term.get('id'): term.get('imei') for term in dj_api.request_terminal_list()}
+        result = set(gonasssoft_objs) ^ set([terminals[obj] for obj in project_objs])
+        msg_text = 'Разница\n' + '\n'.join(result)
+        bot.send_message(chat_id=message.chat.id,  text=msg_text)
+    except Exception:
+        logging.critical(msg="func check_glonasssoft_dj_objects - error", exc_info=True)
+
+
+
 def morning_check():
     """
     Утренний скрипт: проверка баланса ЛС,
@@ -576,6 +609,10 @@ def take_text(message):
              check_mts_sim_cards(message)
         elif message.text.lower() == commands[9].lower():
              xlsx_numbers(message)
+        elif message.text.lower() == commands[10].lower():
+             check_active_mts_sim_cards(message)
+        elif message.text.lower() == commands[11].lower():
+             check_glonasssoft_dj_objects(message)
         else:
             logging.warning(f"func take_text: not understend question: {message.text}")
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')

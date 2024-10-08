@@ -25,3 +25,8 @@ ya_mary_email_login = os.getenv("YA_EMAIL_MARY_LOGIN")
 ya_mary_email_password = os.getenv("YA_EMAIL_MARY_PASSWORD")
 id_teleg_mary = os.getenv("TELEG_ID_MARY")
 token_drf = os.getenv("TOKEN_DRF")
+
+glonasssoft_login = os.getenv('GLONASSSOFT_LOGIN')
+glonasssoft_password = os.getenv('GLONASSSOFT_PASSWORD')
+glonasssoft_org_id = os.getenv('GLONASSSOFT_ORG_ID')
+glonasssoft_user_id= os.getenv('GLONASSSOFT_USER_ID')
