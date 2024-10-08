@@ -1,4 +1,4 @@
-import config
+import configs
 import calendar
 import datetime
 import logging
@@ -10,8 +10,8 @@ import time
 
 def request_new_token():
     try:
-        login = config.mts_login
-        password = config.mts_password
+        login = configs.mts_login
+        password = configs.mts_password
         time_live_token = 86400
         url = "https://api.mts.ru/token"
         params = {
@@ -26,7 +26,7 @@ def request_new_token():
             params=params
             )
         token = response.json()["access_token"]
-        with sq.connect(config.database) as con:
+        with sq.connect(configs.database) as con:
             cur = con.cursor()
             cur.execute("DELETE FROM tokens")
             cur.execute(
@@ -40,7 +40,7 @@ def request_new_token():
 
 def get_token():
     try:
-        with sq.connect(config.database) as con:
+        with sq.connect(configs.database) as con:
             cur = con.cursor()
             cur.execute("SELECT token FROM tokens WHERE datetime_creation > datetime('now', '-1 day')")
             result = cur.fetchone()

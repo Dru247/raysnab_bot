@@ -1,4 +1,4 @@
-import config
+import configs
 import logging
 import requests
 
@@ -6,7 +6,7 @@ import requests
 url_1 = 'http://89.169.136.83/api/v1/simlist/'
 url_2 = 'http://89.169.136.83/api/v1/termlist/'
 url_3 = 'http://89.169.136.83/api/v1/objects/'
-drf_token = config.token_drf
+drf_token = configs.token_drf
 
 # def get_sim(terminal_imei, url_term=url_2, url_sim=url_1):
 #     try:

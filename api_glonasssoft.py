@@ -1,4 +1,7 @@
+import configs
 import time
+from distutils.command.config import config
+
 import requests
 
 
@@ -9,8 +12,8 @@ def get_token():
     time.sleep(1)
     url = 'https://hosting.glonasssoft.ru/api/v3/auth/login'
     js_data = {
-        "login": "ALehtin@raysnab.ru",
-        "password": "\As!F>a2AGX.o$_U"
+        "login": configs.glonasssoft_login,
+        "password": configs.glonasssoft_password
     }
     response = requests.post(
         url=url,

@@ -1,5 +1,5 @@
 import api_glonasssoft
-import config
+import configs
 import dj_api
 import imaplib
 import logging
@@ -24,7 +24,7 @@ logging.basicConfig(
 schedule_logger = logging.getLogger('schedule')
 schedule_logger.setLevel(level=logging.DEBUG)
 
-bot = telebot.TeleBot(config.telegram_token)
+bot = telebot.TeleBot(configs.telegram_token)
 
 commands = [
     'Статус блокировки',
@@ -48,7 +48,7 @@ def check_user(message):
     """Проверяет пользоватиеля на право выполнения команд"""
     try:
         user_id = message.chat.id
-        with sq.connect(config.database) as con:
+        with sq.connect(configs.database) as con:
             cur = con.cursor()
             cur.execute(
                 "SELECT count() FROM contacts WHERE data = ?",
@@ -253,14 +253,14 @@ def mts_get_account_balance():
         if error:
             msg_text = f'Ошибка - {result}'
         else:
-            with sq.connect(config.database) as con:
+            with sq.connect(configs.database) as con:
                 cur = con.cursor()
                 cur.execute("SELECT balance FROM mts_balances ORDER BY id DESC LIMIT 1")
                 old_balance = cur.fetchone()[0]
                 cur.execute("INSERT INTO mts_balances (balance) VALUES (?)", (result,))
             difference = float(result) - old_balance
             msg_text = f"МТС Баланс: {round(result, 2)} ({round(difference, 2)})"
-        bot.send_message(chat_id=config.telegram_my_id, text=msg_text)
+        bot.send_message(chat_id=configs.telegram_my_id, text=msg_text)
     except Exception:
         logging.critical(msg="func mts_get_account_balance - error", exc_info=True)
 
@@ -276,9 +276,9 @@ def mts_check_num_balance(balance=0, morning=False):
                 number, balance = record
                 msg_text += f"\n{number} - {balance}"
             if morning:
-                chats = [config.telegram_my_id]
+                chats = [configs.telegram_my_id]
             else:
-                with sq.connect(config.database) as con:
+                with sq.connect(configs.database) as con:
                     cur = con.cursor()
                     cur.execute("SELECT data FROM contacts WHERE contact_type = 3")
                     result = cur.fetchall()
@@ -289,7 +289,7 @@ def mts_check_num_balance(balance=0, morning=False):
         logging.critical(msg="func mts_check_balance - error", exc_info=True)
 
 
-def check_email(imap_server=config.imap_server_yandex, email_login=config.ya_mary_email_login, email_password=config.ya_mary_email_password, teleg_id=config.id_teleg_mary):
+def check_email(imap_server=configs.imap_server_yandex, email_login=configs.ya_mary_email_login, email_password=configs.ya_mary_email_password, teleg_id=configs.id_teleg_mary):
     try:
         mailbox = imaplib.IMAP4_SSL(imap_server)
         mailbox.login(email_login, email_password)
@@ -308,7 +308,7 @@ def check_email(imap_server=config.imap_server_yandex, email_login=config.ya_mar
 
 # def get_emails():
 #     try:
-#         with sq.connect(config.database) as con:
+#         with sq.connect(configs.database) as con:
 #             cur = con.cursor()
 #             cur.execute("""
 #                 SELECT human, data
@@ -326,8 +326,8 @@ def check_email(imap_server=config.imap_server_yandex, email_login=config.ya_mar
 #                 check_email(
 #                     email_login=contact[1],
 #                     teleg_id=cur.fetchone()[0],
-#                     imap_server=config.imap_yandex,
-#                     email_password=config.email_passwords[0]
+#                     imap_server=configs.imap_yandex,
+#                     email_password=configs.email_passwords[0]
 #                 )
 #     except Exception:
 #         logging.error("func get_emails- error", exc_info=True)
@@ -465,7 +465,7 @@ def check_mts_sim_cards(message, morning=False):
             msg_text += f'\n{num[0]} {num[1]}'
         list_text_msgs = cut_msg(msg_text)
         if morning:
-            list_chat_id = [config.telegram_my_id, config.telegram_maks_id]
+            list_chat_id = [configs.telegram_my_id, configs.telegram_maks_id]
         else:
             list_chat_id = [message.chat.id]
         for chat in list_chat_id:
@@ -491,8 +491,8 @@ def check_active_mts_sim_cards(message):
 
 def check_glonasssoft_dj_objects(message):
     try:
-        gonasssoft_objs = [obj.get('imei') for obj in api_glonasssoft.request_list_objects(config.glonasssoft_org_id)]
-        # gonasssoft_objs = [(obj.get('name'), obj.get('imei')) for obj in api_glonasssoft.request_list_objects(config.glonasssoft_org_id)]
+        gonasssoft_objs = [obj.get('imei') for obj in api_glonasssoft.request_list_objects(configs.glonasssoft_org_id)]
+        # gonasssoft_objs = [(obj.get('name'), obj.get('imei')) for obj in api_glonasssoft.request_list_objects(configs.glonasssoft_org_id)]
         # user_list_target_serv = [user.get('id') for user in dj_api.request_user_list() if user.get('server') == 4]
         # project_objs = [(obj.get('name'), obj.get('terminal')) for obj in dj_api.request_object_list() if obj.get('wialon_user') in user_list_target_serv and obj.get('active')]
         # terminals = {term.get('id'): term.get('imei') for term in dj_api.request_terminal_list()}
@@ -517,7 +517,7 @@ def morning_check():
     """
     try:
         mts_get_account_balance()
-        mts_check_num_balance(balance=config.warning_balance, morning=True)
+        mts_check_num_balance(balance=configs.warning_balance, morning=True)
         check_mts_sim_cards(0, morning=True)
     except Exception:
         logging.critical(msg="func morning_check - error", exc_info=True)
@@ -526,11 +526,11 @@ def morning_check():
 
 def schedule_main():
     try:
-        schedule.every().day.at("06:00", timezone(config.timezone_my)).do(morning_check)
-        schedule.every().hour.at(":00").do(mts_check_num_balance, balance=config.critical_balance)
-        schedule.every().day.at("09:00", timezone(config.timezone_my)).do(check_email)
-        schedule.every().day.at("15:00", timezone(config.timezone_my)).do(check_email)
-        schedule.every().day.at("21:00", timezone(config.timezone_my)).do(check_email)
+        schedule.every().day.at("06:00", timezone(configs.timezone_my)).do(morning_check)
+        schedule.every().hour.at(":00").do(mts_check_num_balance, balance=configs.critical_balance)
+        schedule.every().day.at("09:00", timezone(configs.timezone_my)).do(check_email)
+        schedule.every().day.at("15:00", timezone(configs.timezone_my)).do(check_email)
+        schedule.every().day.at("21:00", timezone(configs.timezone_my)).do(check_email)
 
         while True:
             schedule.run_pending()
