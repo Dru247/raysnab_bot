@@ -51,7 +51,7 @@ def get_payer_terminals(payer):
     """API запрос на списк терминалов по плательщику"""
     try:
         response = main_request(url_3, drf_token)
-        terminals_id = [row['terminal'] for row in response if row['payer'] == payer and row['terminal']]
+        terminals_id = [row['terminal'] for row in response if row['payer'] == payer and row['terminal'] and row['active']]
         return terminals_id
     except Exception:
         logging.critical(msg="func dj_api.get_payer_terminals - error", exc_info=True)
