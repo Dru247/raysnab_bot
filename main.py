@@ -34,7 +34,7 @@ commands = [
     'Заблокировать в конце месяца',
     'Замена сим-карты',
     'Список болванок МТС',
-    'Плательщик->СИМ-карты',
+    'Список СИМ-карт',
     'Сравнить номера',
     'xlsx.номера',
     'Проверка активности сим-карт',
@@ -80,6 +80,32 @@ def check_number(number):
             return False, number
     except Exception:
         logging.critical(msg="func check_number - error", exc_info=True)
+
+
+def cut_msg_telegram(text_msg):
+    """Обрезает сообщения по максимальному значению символов в сообщении Телеграм"""
+    try:
+        max_char_msg_telegram = 4096
+        msgs = list()
+        list_rows = text_msg.split('\n')
+        one_msg = str()
+        len_char = 0
+
+        for row in list_rows:
+            row += '\n'
+            if len(row) + len_char > max_char_msg_telegram:
+                msgs.append(one_msg)
+                one_msg = row
+                len_char = len(row)
+            else:
+                one_msg += row
+                len_char += len(row)
+
+        msgs.append(one_msg)
+        return msgs
+    except Exception:
+        logging.critical(msg="func cut_msg_telegram - error", exc_info=True)
+
 
 def mts_request_number(message):
     """Запрашивает номер симки"""
@@ -377,10 +403,32 @@ def get_xlsx_numbers(message):
         logging.error("func get_xlsx_numbers - error", exc_info=True)
 
 
+def get_numbers_payer_or_date(message):
+    """Спрашивает по дате или по плательщику прислать сим-карты"""
+    try:
+        inline_keys = [
+            types.InlineKeyboardButton(
+                text='По ID плательщика',
+                callback_data='get_numbers_id_payer'),
+            types.InlineKeyboardButton(
+                text='По дате',
+                callback_data='get_numbers_date'),
+        ]
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(*inline_keys)
+        bot.send_message(
+            message.from_user.id,
+            text='Выбери',
+            reply_markup=keyboard)
+    except Exception:
+        logging.error("func get_numbers_payer_or_date - error", exc_info=True)
+
+
+
 def get_number_payer_sim_cards(message):
     """Запрашивает номер плательщика"""
     try:
-        msg = bot.send_message(chat_id=message.chat.id, text="Напиши id плательщика")
+        msg = bot.send_message(chat_id=message.chat.id, text="Напиши ID плательщика")
         bot.register_next_step_handler(message=msg, callback=get_list_payer_sim_cards)
     except Exception:
         logging.error("func get_payer_sim_cards - error", exc_info=True)
@@ -400,23 +448,39 @@ def get_list_payer_sim_cards(message):
         logging.error("func get_list_payer_sim_cards - error", exc_info=True)
 
 
+def get_list_date_sim_cards(message):
+    """Запрашивает дату"""
+    try:
+        msg = bot.send_message(chat_id=message.chat.id, text='Напиши дату в формате "2000-12-31"')
+        bot.register_next_step_handler(message=msg, callback=get_list_date_sim_cards_handler)
+    except Exception:
+        logging.error("func get_list_date_sim_cards - error", exc_info=True)
+
+
+def get_list_date_sim_cards_handler(message):
+    """Отправляет сообщение со списком номеров сим-карт по дате"""
+    try:
+        date = message.text
+        sim_cards = dj_api.get_date_sim_cards(date)
+        for sim_list in sim_cards:
+            text_msg = '\n'.join(sim_list)
+            for msg_one in cut_msg_telegram(text_msg):
+                bot.send_message(
+                    chat_id=message.chat.id,
+                    text=msg_one
+                )
+    except Exception:
+        logging.error("func get_list_date_sim_cards_handler - error", exc_info=True)
+
+
 def get_list_vacant_sim_cards(message):
     """Отправляет сообщение со списком 'болванок'"""
     try:
-        max_char_icc_in_msg = 190
         sim_cards = mts_api.get_vacant_sim_cards()
-        sim_cards_msgs = list()
-
-        while len(sim_cards) > max_char_icc_in_msg:
-            sim_cards_msgs.append(sim_cards[:190])
-            sim_cards = sim_cards[190:]
-
-        sim_cards_msgs.append(sim_cards)
-
-        for msg in sim_cards_msgs:
+        for msg in cut_msg_telegram('\n'.join(sim_cards)):
             bot.send_message(
                 chat_id=message.chat.id,
-                text='\n'.join(msg)
+                text=msg
             )
     except Exception:
         logging.critical(msg="func get_list_vacant_sim_cards - error", exc_info=True)
@@ -425,27 +489,6 @@ def get_list_vacant_sim_cards(message):
 def check_mts_sim_cards(message, morning=False):
     """Сравнивает симкарты на проете и сайте МТС"""
     try:
-        def cut_msg(text_msg):
-            """Обрезает сообщения по максимальному значению символов в сообщении Телеграм"""
-            max_char_msg_telegram = 4096
-            msgs = list()
-            list_rows = text_msg.split('\n')
-            one_msg = str()
-            len_char = 0
-
-            for row in list_rows:
-                len_char += len(row) + 1
-                if len_char < max_char_msg_telegram:
-                    one_msg += row + '\n'
-                else:
-                    msgs.append(one_msg)
-                    one_msg = str()
-                    len_char = 0
-
-            msgs.append(one_msg)
-            return msgs
-
-
         mts_id = 2
         prj_mts_sim_cards = [(num[3], num[2]) for num in dj_api.get_list_sim_cards() if num[1] == mts_id]
         site_mts_sim_cards = mts_api.get_list_all_icc()
@@ -463,7 +506,7 @@ def check_mts_sim_cards(message, morning=False):
         msg_text = f'Разница {len(another_sim)} шт.'
         for num in another_sim:
             msg_text += f'\n{num[0]} {num[1]}'
-        list_text_msgs = cut_msg(msg_text)
+        list_text_msgs = cut_msg_telegram(msg_text)
         if morning:
             list_chat_id = [configs.telegram_my_id, configs.telegram_maks_id]
         else:
@@ -480,8 +523,10 @@ def check_mts_sim_cards(message, morning=False):
 
 
 def check_active_mts_sim_cards(message):
+    """Сравнивает заблокированные и активные симкарты на проете и на МТС"""
     try:
-        print(dj_api.get_status_sim_cards())
+        pass
+        # print(dj_api.get_status_sim_cards())
         # mts_id = 2
         # prj_mts_sim_cards = [(num[3], num[2]) for num in dj_api.get_list_sim_cards() if num[1] == mts_id]
         # site_mts_sim_cards = mts_api.get_list_all_icc()
@@ -576,7 +621,11 @@ def help_message(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
-    if "mts_yes_exchange_sim" in call.data:
+    if 'get_numbers_date' in call.data:
+        get_list_date_sim_cards(call.message)
+    elif 'get_numbers_id_payer' in call.data:
+        get_number_payer_sim_cards(call.message)
+    elif "mts_yes_exchange_sim" in call.data:
         threading.Thread(target=mts_yes_exchange_sim, args=(call.message, call.data)).start()
     elif "mts_no_exchange_sim" in call.data:
         threading.Thread(target=mts_exchange_no, args=(call.message,)).start()
@@ -604,7 +653,7 @@ def take_text(message):
         elif message.text.lower() == commands[6].lower():
              get_list_vacant_sim_cards(message)
         elif message.text.lower() == commands[7].lower():
-            get_number_payer_sim_cards(message)
+            get_numbers_payer_or_date(message)
         elif message.text.lower() == commands[8].lower():
              check_mts_sim_cards(message)
         elif message.text.lower() == commands[9].lower():

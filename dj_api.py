@@ -77,6 +77,36 @@ def get_payer_sim_cards(payer):
         logging.critical(msg="func dj_api.get_payer_sim_cards - error", exc_info=True)
 
 
+def get_date_terminals(date):
+    """API запрос на списк терминалов по дате"""
+    try:
+        response = main_request(url_3, drf_token)
+        terminals_id = [row['terminal'] for row in response if row['date_change_status'] == date and row['terminal']]
+        return terminals_id
+    except Exception:
+        logging.critical(msg="func dj_api.get_date_terminals - error", exc_info=True)
+
+
+def get_date_sim_cards(date):
+    try:
+        terminals_id = get_date_terminals(date)
+        sim_cards = main_request(url_1, drf_token)
+        result = [(row['operator'], row['number'], row['icc']) for row in sim_cards if row['terminal'] in terminals_id]
+        mts = ['МТС:']
+        mega = ['МЕГА:']
+        sim2m = ['СИМ2М:']
+        for sim in result:
+            if sim[0] == 1:
+                mega.append(sim[1])
+            elif sim[0] == 2:
+                mts.append(sim[1])
+            else:
+                sim2m.append(sim[1])
+        return mts, mega, sim2m
+    except Exception:
+        logging.critical(msg="func dj_api.get_date_sim_cards - error", exc_info=True)
+
+
 def get_status_sim_cards():
     """API запрос на списк активных\неактивных терминалов """
     try:
