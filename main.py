@@ -1,17 +1,20 @@
+import datetime
+import calendar
+
 import api_glonasssoft
 import configs
 import dj_api
 import imaplib
 import logging
 import mts_api
-import openpyxl as op
 import schedule
 import sqlite3 as sq
 import telebot
 import time
 import threading
 
-from io import BytesIO
+from dateutil.relativedelta import relativedelta
+# from io import BytesIO
 from pytz import timezone
 from telebot import types
 
@@ -36,9 +39,9 @@ commands = [
     'Список болванок МТС',
     'Список СИМ-карт',
     'Сравнить номера',
-    'xlsx.номера',
     'Проверка активности сим-карт',
-    'Сравнить GLONASSsoft'
+    'Сравнить GLONASSsoft',
+    'Оплата'
 ]
 keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
 keyboard_main.add(*[types.KeyboardButton(comm) for comm in commands])
@@ -80,6 +83,15 @@ def check_number(number):
             return False, number
     except Exception:
         logging.critical(msg="func check_number - error", exc_info=True)
+
+
+def check_date(date_target):
+    """Проверяет дату"""
+    try:
+        date_target = datetime.datetime.strptime(date_target, '%Y-%m-%d')
+        return isinstance(date_target, datetime.date)
+    except Exception:
+        logging.critical(msg="func check_date - error", exc_info=True)
 
 
 def cut_msg_telegram(text_msg):
@@ -358,50 +370,6 @@ def check_email(imap_server=configs.imap_server_yandex, email_login=configs.ya_m
 #     except Exception:
 #         logging.error("func get_emails- error", exc_info=True)
 
-def xlsx_numbers(message):
-    try:
-        msg = bot.send_message(chat_id=message.chat.id, text="Загрузи xlsx")
-        bot.register_next_step_handler(message=msg, callback=get_xlsx_numbers)
-    except Exception:
-        logging.error("func xlsx_numbers - error", exc_info=True)
-
-
-def get_xlsx_numbers(message):
-    try:
-        file_id = message.document.file_id
-        file_info = bot.get_file(file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
-        numbers = {
-            "МТС": [],
-            "МЕГА": [],
-            "СИМ2М": []
-        }
-        excel_doc = op.open(filename=BytesIO(downloaded_file), data_only=True)
-        sheet_names = excel_doc.sheetnames
-        sheet = excel_doc[sheet_names[0]]
-        count_row = 2
-        while sheet.cell(row=count_row, column=1).value is not None:
-            data_row = sheet.cell(row=count_row, column=1).value.split(", ")
-            for data in data_row:
-                data = data.split(": ")
-                if data[0].isdigit():
-                    if data[0][5] != "0":
-                        numbers["СИМ2М"].append(data[1])
-                    else:
-                        if len(data[0]) == 20:
-                            numbers["МТС"].append(data[1])
-                        else:
-                            numbers["МЕГА"].append(data[1])
-            count_row += 1
-        for key in numbers:
-            msg_text = key + "\n"
-            for value in numbers[key]:
-                msg_text += value + "\n"
-            bot.send_message(chat_id=message.chat.id, text=msg_text)
-        excel_doc.close()
-    except Exception:
-        logging.error("func get_xlsx_numbers - error", exc_info=True)
-
 
 def get_numbers_payer_or_date(message):
     """Спрашивает по дате или по плательщику прислать сим-карты"""
@@ -553,6 +521,67 @@ def check_glonasssoft_dj_objects(message):
         logging.critical(msg="func check_glonasssoft_dj_objects - error", exc_info=True)
 
 
+def payment_request_payer(message):
+    """Запрашивает ID плательщика у которого нужно зарегистрировать платёж в объектах"""
+    try:
+        msg = bot.send_message(chat_id=message.chat.id, text='Напиши ID плательщика')
+        bot.register_next_step_handler(message=msg, callback=payment_request_date)
+    except Exception:
+        logging.critical(msg="func payment_request_payer - error", exc_info=True)
+
+
+def payment_request_date(message):
+    """Выбор даты оплаченного периода"""
+    try:
+        payer_id = message.text
+        date_target = datetime.date.today() + relativedelta(months=+1)
+        last_day = calendar.monthrange(date_target.year, date_target.month)[1]
+        date_target = date_target.strftime(f'%Y-%m-{last_day}')
+        inline_keys = [
+            types.InlineKeyboardButton(
+                text=date_target,
+                callback_data=f'payment_change_date {payer_id} {date_target}'
+            ),
+            types.InlineKeyboardButton(
+                text='Произвольная дата',
+                callback_data=f'payment_custom_date {payer_id}'
+            ),
+        ]
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(*inline_keys)
+        bot.send_message(
+            message.from_user.id,
+            text='Выбери дату',
+            reply_markup=keyboard)
+    except Exception:
+        logging.critical(msg="func payment_request_date - error", exc_info=True)
+
+
+def payment_request_custom_date(message, call_data):
+    """Запрашивает произвольную дату"""
+    try:
+        msg = bot.send_message(chat_id=message.chat.id, text='Введи дату в формате "2000-01-31"')
+        bot.register_next_step_handler(message=msg, callback=payment_change_date, call_data=call_data)
+    except Exception:
+        logging.critical(msg="func payment_request_custom_date - error", exc_info=True)
+
+
+def payment_change_date(message, call_data):
+    """Регистрирует оплаченную дату в объекта плательщика"""
+    try:
+        if len(call_data.split()) == 2:
+            payer_id = call_data.split()[1]
+            date_target = message.text
+        else:
+            payer_id, date_target = call_data.split()[1:]
+        if not check_date(date_target):
+            bot.send_message(message.chat.id, text='Неверный формат даты')
+        else:
+            dj_api.objects_change_date(payer_id, date_target)
+            bot.send_message(message.chat.id, text='Успех')
+    except Exception:
+        logging.critical(msg="func payment_change_date - error", exc_info=True)
+
 
 def morning_check():
     """
@@ -633,6 +662,10 @@ def callback_query(call):
         threading.Thread(target=mts_block_exchange_sim, args=(call.message, call.data)).start()
     elif "mts_noblock_exchange_sim" in call.data:
         threading.Thread(target=mts_exchange_no, args=(call.message,)).start()
+    elif 'payment_change_date' in call.data:
+        payment_change_date(call.message, call.data)
+    elif 'payment_custom_date' in call.data:
+        payment_request_custom_date(call.message, call.data)
 
 
 @bot.message_handler(content_types=['text'])
@@ -657,11 +690,11 @@ def take_text(message):
         elif message.text.lower() == commands[8].lower():
              check_mts_sim_cards(message)
         elif message.text.lower() == commands[9].lower():
-             xlsx_numbers(message)
-        elif message.text.lower() == commands[10].lower():
              check_active_mts_sim_cards(message)
-        elif message.text.lower() == commands[11].lower():
+        elif message.text.lower() == commands[10].lower():
              check_glonasssoft_dj_objects(message)
+        elif message.text.lower() == commands[11].lower():
+             payment_request_payer(message)
         else:
             logging.warning(f"func take_text: not understend question: {message.text}")
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')

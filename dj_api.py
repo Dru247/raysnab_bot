@@ -161,3 +161,31 @@ def request_terminal_list():
         return response
     except Exception:
         logging.critical(msg="func dj_api.request_terminal_list - error", exc_info=True)
+
+
+def object_change_date_request(obj_id, date_target):
+    """Меняет оплаченную дату у объекта по ID"""
+    try:
+        url = f'http://89.169.136.83/api/v1/object/{obj_id}/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        js_data = {
+            "date_change_status": date_target
+        }
+        response = requests.patch(
+            url=url,
+            headers=headers,
+            json=js_data
+        ).json()
+        return response
+    except Exception:
+        logging.critical(msg="func api_dj.object_change_date_request - error", exc_info=True)
+
+
+def objects_change_date(payer_id, date_target):
+    """Проходится по ID объектов у клиента и меняет дату"""
+    try:
+        objs_id = [row['id'] for row in request_object_list() if row['active'] and row['payer'] == int(payer_id)]
+        for obj_id in objs_id:
+            object_change_date_request(obj_id, date_target)
+    except Exception:
+        logging.critical(msg="func api_dj.objects_change_date - error", exc_info=True)
