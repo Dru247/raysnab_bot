@@ -1,5 +1,6 @@
 import datetime
 import calendar
+from symbol import break_stmt
 
 import api_glonasssoft
 import configs
@@ -521,19 +522,55 @@ def check_glonasssoft_dj_objects(message):
         logging.critical(msg="func check_glonasssoft_dj_objects - error", exc_info=True)
 
 
-def payment_request_payer(message):
+def payment_request_data_payer(message):
+    """Запрашивает способ определения плательщика"""
+    try:
+        inline_keys = [
+            types.InlineKeyboardButton(
+                text='По ID',
+                callback_data=f'payment_choice_id'
+            ),
+            types.InlineKeyboardButton(
+                text='По сообщению',
+                callback_data=f'payment_choice_msg'
+            ),
+        ]
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(*inline_keys)
+        bot.send_message(
+            message.from_user.id,
+            text='Выбери способ определения плательщика',
+            reply_markup=keyboard)
+    except Exception:
+        logging.critical(msg="func payment_request_data_payer - error", exc_info=True)
+
+
+def payment_request_payer(message, call_data):
     """Запрашивает ID плательщика у которого нужно зарегистрировать платёж в объектах"""
     try:
-        msg = bot.send_message(chat_id=message.chat.id, text='Напиши ID плательщика')
-        bot.register_next_step_handler(message=msg, callback=payment_request_date)
+        if call_data == 'payment_choice_msg':
+            msg_text = 'Перешли сообщение плательщика'
+            msg_payer = 1
+        else:
+            msg_payer = 0
+            msg_text = 'Напиши ID плательщика'
+        msg = bot.send_message(chat_id=message.chat.id, text=msg_text)
+        bot.register_next_step_handler(message=msg, callback=payment_request_date, msg_payer=msg_payer)
     except Exception:
         logging.critical(msg="func payment_request_payer - error", exc_info=True)
 
 
-def payment_request_date(message):
+def payment_request_date(message, msg_payer):
     """Выбор даты оплаченного периода"""
     try:
-        payer_id = message.text
+        if msg_payer:
+            tele_id_payer = message.from_user.id
+            payer_id = dj_api.get_human_for_from_teleg_id(tele_id_payer)
+            if not payer_id:
+                bot.send_message(chat_id=message.chat.id, text=f'{tele_id_payer} - не зарегистрирован')
+                return
+        else:
+            payer_id = message.text
         date_target = datetime.date.today() + relativedelta(months=+1)
         last_day = calendar.monthrange(date_target.year, date_target.month)[1]
         date_target = date_target.strftime(f'%Y-%m-{last_day}')
@@ -664,6 +701,8 @@ def callback_query(call):
         threading.Thread(target=mts_exchange_no, args=(call.message,)).start()
     elif 'payment_change_date' in call.data:
         payment_change_date(call.message, call.data)
+    elif 'payment_choice' in call.data:
+        payment_request_payer(call.message, call.data)
     elif 'payment_custom_date' in call.data:
         payment_request_custom_date(call.message, call.data)
 
@@ -694,7 +733,7 @@ def take_text(message):
         elif message.text.lower() == commands[10].lower():
              check_glonasssoft_dj_objects(message)
         elif message.text.lower() == commands[11].lower():
-             payment_request_payer(message)
+             payment_request_data_payer(message)
         else:
             logging.warning(f"func take_text: not understend question: {message.text}")
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')

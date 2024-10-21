@@ -189,3 +189,27 @@ def objects_change_date(payer_id, date_target):
             object_change_date_request(obj_id, date_target)
     except Exception:
         logging.critical(msg="func api_dj.objects_change_date - error", exc_info=True)
+
+
+def api_request_human_contacts():
+    """Запрос списка контактов людей"""
+    try:
+        url = 'http://89.169.136.83/api/v1/human-contacts/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception:
+        logging.critical(msg="func api_dj.api_request_human_contacts - error", exc_info=True)
+
+
+def get_human_for_from_teleg_id(teleg_id):
+    """Поиск ID человека по ID Telegram"""
+    try:
+        for contacts in api_request_human_contacts():
+            if contacts['contact_rec'] == str(teleg_id):
+                return contacts['human']
+    except Exception:
+        logging.critical(msg="func api_dj.objects_change_date - error", exc_info=True)
