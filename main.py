@@ -563,9 +563,9 @@ def payment_request_date(message, msg_payer):
     """Выбор даты оплаченного периода"""
     try:
         if msg_payer:
-            tele_id_payer = message.from_user.id
+            tele_id_payer = message.forward_from.id
+            bot.send_message(chat_id=message.chat.id, text=f'Telegram ID: {tele_id_payer}')
             payer_id = dj_api.get_human_for_from_teleg_id(tele_id_payer)
-            logging.info(f'payment_request_date: {tele_id_payer}, {payer_id}')
             if not payer_id:
                 bot.send_message(chat_id=message.chat.id, text=f'{tele_id_payer} - не зарегистрирован')
                 return
