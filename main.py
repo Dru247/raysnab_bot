@@ -673,6 +673,16 @@ def get_business_connection(business_connection_id):
         logging.critical(msg="func get_business_connection - error", exc_info=True)
 
 
+def test():
+    try:
+        bot.send_message(
+            chat_id=configs.telegram_my_id,
+            text='test',
+            business_connection_id=configs.bus_id)
+    except Exception:
+        logging.critical(msg="func test - error", exc_info=True)
+
+
 def schedule_main():
     try:
         schedule.every().day.at("06:00", timezone(configs.timezone_my)).do(morning_check)
@@ -680,6 +690,7 @@ def schedule_main():
         schedule.every().day.at("09:00", timezone(configs.timezone_my)).do(check_email)
         schedule.every().day.at("15:00", timezone(configs.timezone_my)).do(check_email)
         schedule.every().day.at("21:00", timezone(configs.timezone_my)).do(check_email)
+        schedule.every(5).minutes.do(test)
 
         while True:
             schedule.run_pending()
