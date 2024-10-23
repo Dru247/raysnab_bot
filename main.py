@@ -16,7 +16,7 @@ import threading
 from dateutil.relativedelta import relativedelta
 # from io import BytesIO
 from pytz import timezone
-from telebot import types
+from telebot import TeleBot, types
 
 
 logging.basicConfig(
@@ -27,7 +27,7 @@ logging.basicConfig(
 schedule_logger = logging.getLogger('schedule')
 schedule_logger.setLevel(level=logging.DEBUG)
 
-bot = telebot.TeleBot(configs.telegram_token)
+bot = TeleBot(configs.telegram_token)
 
 commands = [
     'Статус блокировки',
@@ -564,11 +564,12 @@ def payment_request_date(message, msg_payer):
     try:
         if msg_payer:
             tele_id_payer = message.forward_from.id
-            bot.send_message(chat_id=message.chat.id, text=f'Telegram ID: {tele_id_payer}')
             payer_id = dj_api.get_human_for_from_teleg_id(tele_id_payer)
             if not payer_id:
                 bot.send_message(chat_id=message.chat.id, text=f'{tele_id_payer} - не зарегистрирован')
                 return
+            else:
+                bot.send_message(chat_id=message.chat.id, text=f'Telegram ID: {tele_id_payer}')
         else:
             payer_id = message.text
         date_target = datetime.date.today() + relativedelta(months=+1)
@@ -634,6 +635,43 @@ def morning_check():
         logging.critical(msg="func morning_check - error", exc_info=True)
 
 
+def create_business_connection(business_connection):
+    try:
+        business_connection_id = business_connection.id
+        user_chat_id = business_connection.user_chat_id
+        can_reply = business_connection.can_reply
+        is_enabled = business_connection.is_enabled
+        date = business_connection.date
+        with sq.connect(configs.database) as con:
+            cur = con.cursor()
+            cur.execute(
+                '''
+                INSERT INTO business_connections
+                (business_connection_id, user_chat_id, can_reply, is_enabled, date)
+                VALUES (?, ?, ?, ?, ?)
+                ''',
+                (business_connection_id, user_chat_id, can_reply, is_enabled, date)
+            )
+    except Exception:
+        logging.critical(msg="func create_business_connection - error", exc_info=True)
+
+
+def get_business_connection(business_connection_id):
+    try:
+        with sq.connect(configs.database) as con:
+            cur = con.cursor()
+            cur.execute(
+                '''
+                SELECT business_connection_id, user_chat_id, can_reply, is_enabled, date
+                FROM business_connections
+                WHERE business_connection_id = ?
+                ''',
+                (business_connection_id,)
+            )
+            return cur.fetchall()
+    except Exception:
+        logging.critical(msg="func get_business_connection - error", exc_info=True)
+
 
 def schedule_main():
     try:
@@ -649,6 +687,31 @@ def schedule_main():
 
     except Exception:
         logging.error("func schedule_main - error", exc_info=True)
+
+
+@bot.business_connection_handler(func=lambda business_connection: True)
+def handle_business_connection(business_connection):
+    try:
+        create_business_connection(business_connection)
+        logging.info(f'handle_business_connection: {business_connection}')
+    except Exception:
+        logging.error("func handle_business_connection - error", exc_info=True)
+
+
+@bot.business_message_handler(func=lambda message: True, content_types=['audio', 'photo', 'voice', 'video', 'document',
+    'text', 'location', 'contact', 'sticker'])
+def handle_business_message(message):
+    try:
+        user_chat_id = message.chat.id
+        business_connection_id = message.business_connection_id
+        date_msg = message.date
+        business_connection_from_db = get_business_connection(business_connection_id)
+        now_data = (user_chat_id, business_connection_id, date_msg)
+        logging.info(
+            f'\nbusiness_connection_from_db: {business_connection_from_db}\nNow: {now_data}'
+        )
+    except Exception:
+        logging.error("func handle_business_message - error", exc_info=True)
 
 
 @bot.message_handler(commands=['start'])
