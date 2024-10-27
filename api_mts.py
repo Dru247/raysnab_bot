@@ -357,6 +357,28 @@ def request_list_numbers(page_num, account="277702602686", page_size=1000):
         logging.critical(msg="func request_list_numbers - error", exc_info=True)
 
 
+def api_request_number_services(number):
+    """Возвращает список услуг у номера"""
+    try:
+        token = get_token()
+        url = ("https://api.mts.ru/b2b/v1/Product/ProductInfo?category.name=MobileConnectivity"
+               f"&marketSegment.characteristic.name=MSISDN&marketSegment.characteristic.value={number}"
+               "&productOffering.actionAllowed=none"
+               "&productOffering.productSpecification.productSpecificationType.name=block&applyTimeZone=true")
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json"
+        }
+        response = requests.get(
+            url=url,
+            headers=headers
+        )
+        response = response.json()
+        return response
+    except Exception:
+        logging.critical(msg="func api_request_number_services - error", exc_info=True)
+
+
 def get_list_numbers():
     """Возвращает обработанный список ICC + Number"""
     try:
@@ -439,33 +461,12 @@ def get_exchange_sim_card(number, imsi):
         logging.critical(msg="func get_exchange_sim_card - error", exc_info=True)
 
 
-def request_block_info(number):
-    try:
-        token = get_token()
-        url = ("https://api.mts.ru/b2b/v1/Product/ProductInfo?category.name=MobileConnectivity"
-               f"&marketSegment.characteristic.name=MSISDN&marketSegment.characteristic.value={number}"
-               "&productOffering.actionAllowed=none"
-               "&productOffering.productSpecification.productSpecificationType.name=block&applyTimeZone=true")
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json"
-        }
-        response = requests.get(
-            url=url,
-            headers=headers
-        )
-        response = response.json()
-        return response
-    except Exception:
-        logging.critical(msg="func request_block_info - error", exc_info=True)
-
-
 #нужно поправить
 def get_block_info(number):
     try:
         service_id = "BL0005"
         error, result, text = 0, 0, str()
-        response = request_block_info(number)
+        response = api_request_number_services(number)
         if response:
             if "fault" in response:
                 error, text = 1, "Неверный запрос"
@@ -518,3 +519,30 @@ def get_balance_numbers(crit_balance=0):
         return num_balances
     except Exception:
         logging.critical(msg="func get_balance_numbers - error", exc_info=True)
+
+
+def get_all_active_sim_cards():
+    """Возвращает список активных номеров"""
+    try:
+        numbers = get_list_numbers()
+        id_services = 'BL0005', 'BL0008'
+        active_numbers = list()
+        len_num = len(numbers)
+        for num, number in enumerate(numbers):
+            print(len_num - num)
+            time.sleep(1)
+            number = number[1]
+            response = api_request_number_services(number)
+            if 'fault' in response:
+                logging.warning(f'get_all_active_sim_cards - {number} response: {response}')
+                active_numbers.append(number)
+            else:
+                for service in response:
+                    if service.get('externalID') in id_services:
+                        break
+                else:
+                    active_numbers.append(number)
+
+        return active_numbers
+    except Exception as err:
+        logging.critical(msg='func get_all_active_sim_cards - error', exc_info=err)

@@ -1,15 +1,13 @@
+import api_dj
+import api_glonasssoft
+import api_mts
 import datetime
 import calendar
-
-import api_glonasssoft
 import configs
-import dj_api
 import imaplib
 import logging
-import mts_api
 import schedule
 import sqlite3 as sq
-import telebot
 import time
 import threading
 
@@ -133,7 +131,7 @@ def mts_block_info(message):
         number = message.text
         check, number = check_number(number)
         if check:
-            error, result, text = mts_api.get_block_info(number)
+            error, result, text = api_mts.get_block_info(number)
             if error:
                 msg_text = text
             elif result:
@@ -177,7 +175,7 @@ def mts_add_del_services(message, target_func):
                 time.sleep(1)
 
         for success, num, event_id_request in successfully_requests:
-            success, response_text = mts_api.check_status_request(event_id_request)
+            success, response_text = api_mts.check_status_request(event_id_request)
             final_list.append((success, num, response_text))
 
         final_list.sort(key=lambda a: a[0])
@@ -214,7 +212,7 @@ def mts_exchange_sim_second(message, number):
     try:
         last_iccid = message.text
         if last_iccid.isdigit():
-            error, result, text = mts_api.get_vacant_sim_card_exchange(number, last_iccid)
+            error, result, text = api_mts.get_vacant_sim_card_exchange(number, last_iccid)
             if result:
                 iccid, imsi = text.split()
                 keyboard = types.InlineKeyboardMarkup()
@@ -241,10 +239,10 @@ def mts_exchange_sim_second(message, number):
 def mts_yes_exchange_sim(message, call_data):
     try:
         number, imsi = call_data.split()[1].split(";")
-        _, result, _ = mts_api.get_block_info(number)
+        _, result, _ = api_mts.get_block_info(number)
         if result:
-            mts_api.del_block(number)
-        result, text = mts_api.get_exchange_sim_card(number, imsi)
+            api_mts.del_block(number)
+        result, text = api_mts.get_exchange_sim_card(number, imsi)
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(
             types.InlineKeyboardButton(
@@ -267,7 +265,7 @@ def mts_yes_exchange_sim(message, call_data):
 def mts_block_exchange_sim(message, call_data):
     try:
         number = call_data.split()[1]
-        response = mts_api.add_block(number)
+        response = api_mts.add_block(number)
         if response[0]:
             msg_text = f"\n{number}: {response[1]} - Номер в блокировке"
         else:
@@ -287,7 +285,7 @@ def mts_exchange_no(message):
 def mts_get_account_balance():
     """Сравнивает, записывает и отправляет баланс лицевого счёта"""
     try:
-        error, result = mts_api.get_balance()
+        error, result = api_mts.get_balance()
         if error:
             msg_text = f'Ошибка - {result}'
         else:
@@ -306,25 +304,30 @@ def mts_get_account_balance():
 def mts_check_num_balance(balance=0, morning=False):
     """Проверяет номера МТС на КРИТИЧЕСКИЙ перерасход и отправляет сотрудникам в чат"""
     try:
-        records = mts_api.get_balance_numbers(balance)
+        records = api_mts.get_balance_numbers(balance)
         if records:
             records.sort(key=lambda a: a[1], reverse=True)
-            msg_text = "МТС Перерасход:"
+            msg_text = 'МТС Перерасход:'
+            overspending = 0
             for record in records:
-                number, balance = record
-                msg_text += f"\n{number} - {balance}"
+                number, sim_balance = record
+                msg_text += f"\n{number} - {sim_balance}"
+                overspending += sim_balance - balance
+            msgs = cut_msg_telegram(msg_text)
             if morning:
                 chats = [configs.telegram_my_id]
+                bot.send_message(chat_id=configs.telegram_my_id, text=f'Общий перерасход: {overspending}')
             else:
                 with sq.connect(configs.database) as con:
                     cur = con.cursor()
-                    cur.execute("SELECT data FROM contacts WHERE contact_type = 3")
+                    cur.execute('SELECT data FROM contacts WHERE contact_type = 3')
                     result = cur.fetchall()
                     chats = [chat[0] for chat in result]
             for chat in chats:
-                bot.send_message(chat_id=chat, text=msg_text)
-    except Exception:
-        logging.critical(msg="func mts_check_balance - error", exc_info=True)
+                for msg in msgs:
+                    bot.send_message(chat_id=chat, text=msg)
+    except Exception as err:
+        logging.critical(msg='func mts_check_balance - error', exc_info=err)
 
 
 def check_email(imap_server=configs.imap_server_yandex, email_login=configs.ya_mary_email_login, email_password=configs.ya_mary_email_password, teleg_id=configs.id_teleg_mary):
@@ -406,7 +409,7 @@ def get_list_payer_sim_cards(message):
     """Отправляет сообщение со списком номеров сим-карт по плательщику"""
     try:
         id_payer = int(message.text)
-        sim_cards = dj_api.get_payer_sim_cards(id_payer)
+        sim_cards = api_dj.get_payer_sim_cards(id_payer)
         for sim_list in sim_cards:
             bot.send_message(
                 chat_id=message.chat.id,
@@ -429,7 +432,7 @@ def get_list_date_sim_cards_handler(message):
     """Отправляет сообщение со списком номеров сим-карт по дате"""
     try:
         date = message.text
-        sim_cards = dj_api.get_date_sim_cards(date)
+        sim_cards = api_dj.get_date_sim_cards(date)
         for sim_list in sim_cards:
             text_msg = '\n'.join(sim_list)
             for msg_one in cut_msg_telegram(text_msg):
@@ -437,14 +440,14 @@ def get_list_date_sim_cards_handler(message):
                     chat_id=message.chat.id,
                     text=msg_one
                 )
-    except Exception:
-        logging.error("func get_list_date_sim_cards_handler - error", exc_info=True)
+    except Exception as err:
+        logging.error("func get_list_date_sim_cards_handler - error", exc_info=err)
 
 
 def get_list_vacant_sim_cards(message):
     """Отправляет сообщение со списком 'болванок'"""
     try:
-        sim_cards = mts_api.get_vacant_sim_cards()
+        sim_cards = api_mts.get_vacant_sim_cards()
         for msg in cut_msg_telegram('\n'.join(sim_cards)):
             bot.send_message(
                 chat_id=message.chat.id,
@@ -454,66 +457,51 @@ def get_list_vacant_sim_cards(message):
         logging.critical(msg="func get_list_vacant_sim_cards - error", exc_info=True)
 
 
-def check_mts_sim_cards(message, morning=False):
+def check_mts_sim_cards(msg_chat_id):
     """Сравнивает симкарты на проете и сайте МТС"""
     try:
         mts_id = 2
-        prj_mts_sim_cards = [(num[3], num[2]) for num in dj_api.get_list_sim_cards() if num[1] == mts_id]
-        site_mts_sim_cards = mts_api.get_list_all_icc()
-        # msg_text = 'На проекте есть, на МТС нет'
-        # another_sim = set(prj_mts_sim_cards) - set(site_mts_sim_cards)
-        # for num in another_sim:
-        #     msg_text += f'\n{num[0]} {num[1]}'
-        # list_text_msgs = cut_msg(msg_text)
-        # msg_text = 'На МТС есть, на проекте нет'
-        # another_sim = set(site_mts_sim_cards) - set(prj_mts_sim_cards)
-        # for num in another_sim:
-        #     msg_text += f'\n{num[0]} {num[1]}'
-        # list_text_msgs.append(cut_msg(msg_text))
+        prj_mts_sim_cards = [(num[3], num[2]) for num in api_dj.get_list_sim_cards() if num[1] == mts_id]
+        site_mts_sim_cards = api_mts.get_list_all_icc()
         another_sim = set(prj_mts_sim_cards) ^ set(site_mts_sim_cards)
         msg_text = f'Разница {len(another_sim)} шт.'
         for num in another_sim:
             msg_text += f'\n{num[0]} {num[1]}'
-        list_text_msgs = cut_msg_telegram(msg_text)
-        if morning:
-            list_chat_id = [configs.telegram_my_id, configs.telegram_maks_id]
-        else:
-            list_chat_id = [message.chat.id]
-        for chat in list_chat_id:
-            for msg in list_text_msgs:
-                bot.send_message(
-                    chat_id=chat,
-                    text=msg
-                )
-
+        for msg in cut_msg_telegram(msg_text):
+            bot.send_message(
+                chat_id=msg_chat_id,
+                text=msg
+            )
     except Exception:
         logging.critical(msg="func check_mts_sim_cards - error", exc_info=True)
 
 
-def check_active_mts_sim_cards(message):
-    """Сравнивает заблокированные и активные симкарты на проете и на МТС"""
+def check_active_mts_sim_cards(msg_chat_id, morning=False):
+    """Сравнивает активные симкарты на проете и на МТС"""
     try:
-        pass
-        # print(dj_api.get_status_sim_cards())
-        # mts_id = 2
-        # prj_mts_sim_cards = [(num[3], num[2]) for num in dj_api.get_list_sim_cards() if num[1] == mts_id]
-        # site_mts_sim_cards = mts_api.get_list_all_icc()
-    except Exception:
-        logging.critical(msg="func check_active_mts_sim_cards - error", exc_info=True)
+        if not morning:
+            bot.send_message(chat_id=msg_chat_id, text='Проверка запущена. Займёт ~1,5 часа')
+        dj_mts_sim_cards = set(api_dj.get_all_active_sim_cards())
+        numbers_in_hands = {num['contact_rec'] for num in api_dj.api_request_human_contacts()}
+        site_mts_sim_cards = set(api_mts.get_all_active_sim_cards())
+        site_mts_sim_cards -= numbers_in_hands # убираем активные сим-карты на руках и с тарифами
+        sim_cards = dj_mts_sim_cards ^ site_mts_sim_cards
+        msg_text = 'Разница блокировки СИМ-карт:\n' + '\n'.join(sim_cards)
+        for msg_one in cut_msg_telegram(msg_text):
+            bot.send_message(
+                chat_id=msg_chat_id,
+                text=msg_one
+            )
+    except Exception as err:
+        logging.critical(msg='func check_active_mts_sim_cards - error', exc_info=err)
 
 
 def check_glonasssoft_dj_objects(message):
     try:
         gonasssoft_objs = [obj.get('imei') for obj in api_glonasssoft.request_list_objects(configs.glonasssoft_org_id)]
-        # gonasssoft_objs = [(obj.get('name'), obj.get('imei')) for obj in api_glonasssoft.request_list_objects(configs.glonasssoft_org_id)]
-        # user_list_target_serv = [user.get('id') for user in dj_api.request_user_list() if user.get('server') == 4]
-        # project_objs = [(obj.get('name'), obj.get('terminal')) for obj in dj_api.request_object_list() if obj.get('wialon_user') in user_list_target_serv and obj.get('active')]
-        # terminals = {term.get('id'): term.get('imei') for term in dj_api.request_terminal_list()}
-        # for num, obj in enumerate(project_objs):
-        #     project_objs[num] = obj[0], terminals[obj[1]]
-        user_list_target_serv = [user.get('id') for user in dj_api.request_user_list() if user.get('server') == 4]
-        project_objs = [obj.get('terminal') for obj in dj_api.request_object_list() if obj.get('wialon_user') in user_list_target_serv and obj.get('active')]
-        terminals = {term.get('id'): term.get('imei') for term in dj_api.request_terminal_list()}
+        user_list_target_serv = [user.get('id') for user in api_dj.api_request_user_list() if user.get('server') == 4]
+        project_objs = [obj.get('terminal') for obj in api_dj.api_request_object_list() if obj.get('wialon_user') in user_list_target_serv and obj.get('active')]
+        terminals = {term.get('id'): term.get('imei') for term in api_dj.api_request_terminal_list()}
         result = set(gonasssoft_objs) ^ set([terminals[obj] for obj in project_objs])
         msg_text = 'Разница\n' + '\n'.join(result)
         bot.send_message(chat_id=message.chat.id,  text=msg_text)
@@ -564,7 +552,7 @@ def payment_request_date(message, msg_payer):
     try:
         if msg_payer:
             tele_id_payer = message.forward_from.id
-            payer_id = dj_api.get_human_for_from_teleg_id(tele_id_payer)
+            payer_id = api_dj.get_human_for_from_teleg_id(tele_id_payer)
             if not payer_id:
                 bot.send_message(chat_id=message.chat.id, text=f'{tele_id_payer} - не зарегистрирован')
                 return
@@ -605,7 +593,7 @@ def payment_request_custom_date(message, call_data):
 
 
 def payment_change_date(message, call_data):
-    """Регистрирует оплаченную дату в объекта плательщика"""
+    """Регистрирует оплаченную дату в объектах плательщика"""
     try:
         if len(call_data.split()) == 2:
             payer_id = call_data.split()[1]
@@ -615,62 +603,26 @@ def payment_change_date(message, call_data):
         if not check_date(date_target):
             bot.send_message(message.chat.id, text='Неверный формат даты')
         else:
-            dj_api.objects_change_date(payer_id, date_target)
+            api_dj.objects_change_date(payer_id, date_target)
             bot.send_message(message.chat.id, text='Успех')
-    except Exception:
-        logging.critical(msg="func payment_change_date - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg="func payment_change_date - error", exc_info=err)
 
 
 def morning_check():
     """
     Утренний скрипт: проверка баланса ЛС,
     проверка перерасхода номеров,
-    проверка наличие симкарт на проете и МТС
+    проверка наличие сим-карт на проекте и МТС,
+    сравнение активных сим-карт
     """
     try:
         mts_get_account_balance()
         mts_check_num_balance(balance=configs.warning_balance, morning=True)
-        check_mts_sim_cards(0, morning=True)
-    except Exception:
-        logging.critical(msg="func morning_check - error", exc_info=True)
-
-
-def create_business_connection(business_connection):
-    try:
-        business_connection_id = business_connection.id
-        user_chat_id = business_connection.user_chat_id
-        can_reply = business_connection.can_reply
-        is_enabled = business_connection.is_enabled
-        date = business_connection.date
-        with sq.connect(configs.database) as con:
-            cur = con.cursor()
-            cur.execute(
-                '''
-                INSERT INTO business_connections
-                (business_connection_id, user_chat_id, can_reply, is_enabled, date)
-                VALUES (?, ?, ?, ?, ?)
-                ''',
-                (business_connection_id, user_chat_id, can_reply, is_enabled, date)
-            )
-    except Exception:
-        logging.critical(msg="func create_business_connection - error", exc_info=True)
-
-
-def get_business_connection(business_connection_id):
-    try:
-        with sq.connect(configs.database) as con:
-            cur = con.cursor()
-            cur.execute(
-                '''
-                SELECT business_connection_id, user_chat_id, can_reply, is_enabled, date
-                FROM business_connections
-                WHERE business_connection_id = ?
-                ''',
-                (business_connection_id,)
-            )
-            return cur.fetchall()
-    except Exception:
-        logging.critical(msg="func get_business_connection - error", exc_info=True)
+        check_mts_sim_cards(msg_chat_id=configs.telegram_job_id)
+        check_active_mts_sim_cards(msg_chat_id=configs.telegram_job_id, morning=True)
+    except Exception as err:
+        logging.critical(msg="func morning_check - error", exc_info=err)
 
 
 def schedule_main():
@@ -687,31 +639,6 @@ def schedule_main():
 
     except Exception:
         logging.error("func schedule_main - error", exc_info=True)
-
-
-@bot.business_connection_handler(func=lambda business_connection: True)
-def handle_business_connection(business_connection):
-    try:
-        create_business_connection(business_connection)
-        logging.info(f'handle_business_connection: {business_connection}')
-    except Exception:
-        logging.error("func handle_business_connection - error", exc_info=True)
-
-
-@bot.business_message_handler(func=lambda message: True, content_types=['audio', 'photo', 'voice', 'video', 'document',
-    'text', 'location', 'contact', 'sticker'])
-def handle_business_message(message):
-    try:
-        user_chat_id = message.chat.id
-        business_connection_id = message.business_connection_id
-        date_msg = message.date
-        business_connection_from_db = get_business_connection(business_connection_id)
-        now_data = (user_chat_id, business_connection_id, date_msg)
-        logging.info(
-            f'\nbusiness_connection_from_db: {business_connection_from_db}\nNow: {now_data}'
-        )
-    except Exception:
-        logging.error("func handle_business_message - error", exc_info=True)
 
 
 @bot.message_handler(commands=['start'])
@@ -755,13 +682,13 @@ def callback_query(call):
     elif 'get_numbers_id_payer' in call.data:
         get_number_payer_sim_cards(call.message)
     elif "mts_yes_exchange_sim" in call.data:
-        threading.Thread(target=mts_yes_exchange_sim, args=(call.message, call.data)).start()
+        mts_yes_exchange_sim(call.message, call.data)
     elif "mts_no_exchange_sim" in call.data:
-        threading.Thread(target=mts_exchange_no, args=(call.message,)).start()
+        mts_exchange_no(call.message)
     elif "mts_block_exchange_sim" in call.data:
-        threading.Thread(target=mts_block_exchange_sim, args=(call.message, call.data)).start()
+        mts_block_exchange_sim(call.message, call.data)
     elif "mts_noblock_exchange_sim" in call.data:
-        threading.Thread(target=mts_exchange_no, args=(call.message,)).start()
+        mts_exchange_no(call.message)
     elif 'payment_change_date' in call.data:
         payment_change_date(call.message, call.data)
     elif 'payment_choice' in call.data:
@@ -776,13 +703,13 @@ def take_text(message):
         if message.text.lower() == commands[0].lower():
             mts_request_number(message)
         elif message.text.lower() == commands[1].lower():
-            mts_request_numbers(message, target_func=mts_api.del_block)
+            mts_request_numbers(message, target_func=api_mts.del_block)
         elif message.text.lower() == commands[2].lower():
-             mts_request_numbers(message, target_func=mts_api.del_block_random_hours)
+             mts_request_numbers(message, target_func=api_mts.del_block_random_hours)
         elif message.text.lower() == commands[3].lower():
-            mts_request_numbers(message, target_func=mts_api.add_block)
+            mts_request_numbers(message, target_func=api_mts.add_block)
         elif message.text.lower() == commands[4].lower():
-            mts_request_numbers(message, target_func=mts_api.add_block_last_day)
+            mts_request_numbers(message, target_func=api_mts.add_block_last_day)
         elif message.text.lower() == commands[5].lower():
             mts_exchange_sim_request_number(message)
         elif message.text.lower() == commands[6].lower():
@@ -790,9 +717,9 @@ def take_text(message):
         elif message.text.lower() == commands[7].lower():
             get_numbers_payer_or_date(message)
         elif message.text.lower() == commands[8].lower():
-             check_mts_sim_cards(message)
+             check_mts_sim_cards(message.chat.id)
         elif message.text.lower() == commands[9].lower():
-             check_active_mts_sim_cards(message)
+             check_active_mts_sim_cards(message.chat.id)
         elif message.text.lower() == commands[10].lower():
              check_glonasssoft_dj_objects(message)
         elif message.text.lower() == commands[11].lower():
