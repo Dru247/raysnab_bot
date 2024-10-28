@@ -8,6 +8,34 @@ import requests
 drf_token = configs.token_drf
 
 
+def api_request_human_term_list():
+    """Запрос списка терминалов на руках"""
+    try:
+        url = 'http://89.169.136.83/api/v1/human-terminals/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception as err:
+        logging.critical(msg="func dj_api.api_request_human_term_list - error", exc_info=err)
+
+
+def api_request_installations_list():
+    """Запрос списка установок"""
+    try:
+        url = 'http://89.169.136.83/api/v1/installations/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception as err:
+        logging.critical(msg='func dj_api.api_request_installations_list - error', exc_info=err)
+
+
 def api_request_object_list():
     """Запрос списка пользователей на серверах"""
     try:
@@ -54,7 +82,7 @@ def api_request_sim_list():
 
 
 def api_request_terminal_list():
-    """Запрос списка пользователей на серверах"""
+    """Запрос списка терминалов"""
     try:
         url = 'http://89.169.136.83/api/v1/termlist/'
         headers = {"Authorization": f"Token {drf_token}"}
@@ -192,7 +220,6 @@ def get_all_active_sim_cards():
     """Возвращает все активные сим-карты МТС"""
     try:
         date_now = datetime.today()
-        get_list_sim_cards()
         id_terminals = [
             row['terminal'] for row in api_request_object_list()
             if datetime.fromisoformat(row['date_change_status']) > date_now
@@ -208,3 +235,43 @@ def get_all_active_sim_cards():
         return mts_sim_cards
     except Exception as err:
         logging.critical(msg="func api_dj.objects_change_date - error", exc_info=err)
+
+
+def get_first_number_for_change():
+    """Возвращает номер МТС для замены"""
+    try:
+        date_now = datetime.today()
+        id_terminals_and_dates = {
+            row['terminal']: row['date_change_status']
+            for row in api_request_object_list()
+            if datetime.fromisoformat(row['date_change_status']) < date_now
+            and row['terminal']
+            and not row['active']
+        }
+        mts_id = 2
+        mts_sim_cards = [
+            (row['number'], id_terminals_and_dates[row['terminal']])
+            for row in api_request_sim_list()
+            if row['operator'] == mts_id
+            and row['terminal'] in id_terminals_and_dates
+            and row['number']
+        ]
+        mts_sim_cards.sort(key=lambda a: a[1], reverse=False)
+        return mts_sim_cards[0]
+    except Exception as err:
+        logging.critical(msg="func api_dj.get_first_number_for_change - error", exc_info=err)
+
+
+def get_diff_terminals():
+    """Возвращает разницу терминалов"""
+    try:
+        id_term_install = {term['terminal'] for term in api_request_installations_list()}
+        id_term_in_hands = {term['terminal'] for term in api_request_human_term_list()}
+        id_term_all = {
+            term['imei'] for term in api_request_terminal_list()
+            if term['id'] not in id_term_install
+            and term['id'] not in id_term_in_hands
+        }
+        return id_term_all
+    except Exception as err:
+        logging.critical(msg="func api_dj.get_diff_terminals - error", exc_info=err)

@@ -39,7 +39,8 @@ commands = [
     'Сравнить номера',
     'Проверка активности сим-карт',
     'Сравнить GLONASSsoft',
-    'Оплата'
+    'Оплата',
+    'Потерянные терминалы'
 ]
 keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
 keyboard_main.add(*[types.KeyboardButton(comm) for comm in commands])
@@ -188,24 +189,15 @@ def mts_add_del_services(message, target_func):
         logging.critical(msg="func mts_add_del_services - error", exc_info=True)
 
 
-def mts_exchange_sim_request_number(message):
-    """Запрашивает номер симки для замены"""
-    try:
-        msg = bot.send_message(chat_id=message.chat.id, text="Введи номер симки для замены (79..)")
-        bot.register_next_step_handler(message=msg, callback=mts_exchange_sim)
-    except Exception:
-        logging.critical(msg="func mts_exchange_sim_request_number - error", exc_info=True)
-
-
 def mts_exchange_sim(message):
+    """Выводит первый номер для замены МТС и спрашивает про ICC ID"""
     try:
-        number = message.text
-        check, number = check_number(number)
-        if check:
-            msg = bot.send_message(chat_id=message.chat.id, text="Введи последние 4е знака ICCID")
-            bot.register_next_step_handler(message=msg, callback=mts_exchange_sim_second, number=number)
-    except Exception:
-        logging.critical(msg="func mts_exchange_sim - error", exc_info=True)
+        number, num_date = api_dj.get_first_number_for_change()
+        bot.send_message(chat_id=message.chat.id, text=f'Номер: {number}\nДата: {num_date}')
+        msg = bot.send_message(chat_id=message.chat.id, text="Введи последние 4е знака ICCID")
+        bot.register_next_step_handler(message=msg, callback=mts_exchange_sim_second, number=number)
+    except Exception as err:
+        logging.critical(msg="func mts_exchange_sim - error", exc_info=err)
 
 
 def mts_exchange_sim_second(message, number):
@@ -609,6 +601,19 @@ def payment_change_date(message, call_data):
         logging.critical(msg="func payment_change_date - error", exc_info=err)
 
 
+def check_diff_terminals(msg_chat_id):
+    """Возвращает список потерянных терминалов"""
+    try:
+        msg_text = 'Потерянные трекеры:\n' + '\n'.join(api_dj.get_diff_terminals())
+        for msg_one in cut_msg_telegram(msg_text):
+            bot.send_message(
+                chat_id=msg_chat_id,
+                text=msg_one
+            )
+    except Exception as err:
+        logging.critical(msg="func get_diff_terminals - error", exc_info=err)
+
+
 def morning_check():
     """
     Утренний скрипт: проверка баланса ЛС,
@@ -620,6 +625,7 @@ def morning_check():
         mts_get_account_balance()
         mts_check_num_balance(balance=configs.warning_balance, morning=True)
         check_mts_sim_cards(msg_chat_id=configs.telegram_job_id)
+        check_diff_terminals(msg_chat_id=configs.telegram_job_id)
         check_active_mts_sim_cards(msg_chat_id=configs.telegram_job_id, morning=True)
     except Exception as err:
         logging.critical(msg="func morning_check - error", exc_info=err)
@@ -711,7 +717,7 @@ def take_text(message):
         elif message.text.lower() == commands[4].lower():
             mts_request_numbers(message, target_func=api_mts.add_block_last_day)
         elif message.text.lower() == commands[5].lower():
-            mts_exchange_sim_request_number(message)
+            mts_exchange_sim(message)
         elif message.text.lower() == commands[6].lower():
              get_list_vacant_sim_cards(message)
         elif message.text.lower() == commands[7].lower():
@@ -724,6 +730,8 @@ def take_text(message):
              check_glonasssoft_dj_objects(message)
         elif message.text.lower() == commands[11].lower():
              payment_request_data_payer(message)
+        elif message.text.lower() == commands[12].lower():
+             check_diff_terminals(message.chat.id)
         else:
             logging.warning(f"func take_text: not understend question: {message.text}")
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')
