@@ -1,5 +1,4 @@
 import configs
-import calendar
 import datetime
 import logging
 import random
@@ -273,50 +272,29 @@ def change_service_later_handler(number, service_id, action, dt_action):
 
 
 def del_block_random_hours(number):
-    """Удаляет блокировку на номере рандом от 3х до 12 часов"""
+    """Удаляет блокировку на номере рандом от 3-х до 12 часов"""
     try:
-        service_id = "BL0005"
-        action = "delete"
+        service_id = 'BL0005'
+        action = 'delete'
         dt_action = datetime.datetime.now() + datetime.timedelta(hours=random.randint(3, 12))
         dt_action = dt_action.isoformat()
         success, result_text = change_service_later_handler(number, service_id, action, dt_action)
         return success, result_text
-    except Exception:
-        logging.critical(msg="func add_block_random_hours - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
-def add_block_last_day(number):
-    """Отложенна добавляет блокировку на номер в последние минуты месяца"""
-    try:
-        service_id = "BL0005"
-        action = "create"
-        year = datetime.date.today().year
-        month = datetime.date.today().month
-        last_day = calendar.monthrange(year, month)[1]
-        dt_action = datetime.datetime(
-            year=year,
-            month=month,
-            day=last_day,
-            hour=23,
-            minute=random.randint(50, 58),
-            second=random.randint(0, 59),
-        ).isoformat()
-        success, result_text = change_service_later_handler(number, service_id, action, dt_action)
-        return success, result_text
-    except Exception:
-        logging.critical(msg="func add_block_last_day - error", exc_info=True)
 
-
-def request_vacant_sim_cards(number="79162905452", last_iccid=""):
+def request_vacant_sim_cards(number='79162905452', last_icc_id=''):
     """API запрос списка 'болванок'"""
     try:
         token = get_token()
-        url = "https://api.mts.ru/b2b/v1/Resources/GetAvailableSIM"
+        url = 'https://api.mts.ru/b2b/v1/Resources/GetAvailableSIM'
         headers = {
             "Authorization": f"Bearer {token}",
             "accept": "*/*"
         }
-        js_data = {"Msisdn": number, "SearchPattern": f"%{last_iccid}"}
+        js_data = {"Msisdn": number, "SearchPattern": f"%{last_icc_id}"}
         response = requests.post(
             url=url,
             headers=headers,
@@ -324,8 +302,8 @@ def request_vacant_sim_cards(number="79162905452", last_iccid=""):
         )
         response = response.json()
         return response
-    except Exception:
-        logging.critical(msg="func request_vacant_sim_cards - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def get_vacant_sim_cards():

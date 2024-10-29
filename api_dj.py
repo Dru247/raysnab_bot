@@ -165,21 +165,19 @@ def get_date_sim_cards(date):
             else:
                 sim2m.append(sim[1])
         return mts, mega, sim2m
-    except Exception:
-        logging.critical(msg="func dj_api.get_date_sim_cards - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
-def get_status_sim_cards():
-    """API запрос на списк активных\неактивных терминалов """
-    try:
-        mts_id = 2
-        status_terms = {row['terminal']: row['active'] for row in api_request_object_list() if row['terminal']}
-        # "Возникает ошибка если сим-карта стоит в терминале, который на руках у кого-то (ид терминала не находит среди объектов)"
-        print(status_terms[4813])
-        status_sims = {sim[2]: status_terms[sim[4]] for sim in get_list_sim_cards() if sim[4] and sim[1] == mts_id and sim[2]}
-        return status_sims
-    except Exception:
-        logging.critical(msg="func dj_api.get_status_sim_cards - error", exc_info=True)
+# def get_status_sim_cards():
+#     """API запрос на список активных\неактивных терминалов"""
+#     try:
+#         mts_id = 2
+#         status_terms = {row['terminal']: row['active'] for row in api_request_object_list() if row['terminal']}
+#         status_sims = {sim[2]: status_terms[sim[4]] for sim in get_list_sim_cards() if sim[4] and sim[1] == mts_id and sim[2]}
+#         return status_sims
+#     except Exception:
+#         logging.critical(msg="func dj_api.get_status_sim_cards - error", exc_info=True)
 
 
 def objects_change_date(payer_id, date_target):
@@ -188,8 +186,8 @@ def objects_change_date(payer_id, date_target):
         objs_id = [row['id'] for row in api_request_object_list() if row['active'] and row['payer'] == int(payer_id)]
         for obj_id in objs_id:
             api_request_object_change_date(obj_id, date_target)
-    except Exception:
-        logging.critical(msg="func api_dj.objects_change_date - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def api_request_human_contacts():
@@ -265,13 +263,19 @@ def get_first_number_for_change():
 def get_diff_terminals():
     """Возвращает разницу терминалов"""
     try:
-        id_term_install = {term['terminal'] for term in api_request_installations_list()}
-        id_term_in_hands = {term['terminal'] for term in api_request_human_term_list()}
-        id_term_all = {
+        id_term_on_hands = {term['terminal'] for term in api_request_human_term_list()}
+        id_term_in_install = {term['terminal'] for term in api_request_installations_list()}
+        union_trackers = id_term_on_hands | id_term_in_install
+        diff_trackers_all_vs_install_and_on_hands = {
             term['imei'] for term in api_request_terminal_list()
-            if term['id'] not in id_term_install
-            and term['id'] not in id_term_in_hands
+            if term['id'] not in union_trackers
         }
-        return id_term_all
+        id_trackers_in_obj = {obj['terminal'] for obj in api_request_object_list()}
+        intersection_trackers = id_term_on_hands & id_trackers_in_obj
+        diff_trackers_on_hands_and_obj = {
+            term['imei'] for term in api_request_terminal_list()
+            if term['id'] in intersection_trackers
+        }
+        return diff_trackers_all_vs_install_and_on_hands, diff_trackers_on_hands_and_obj
     except Exception as err:
-        logging.critical(msg="func api_dj.get_diff_terminals - error", exc_info=err)
+        logging.critical(msg='', exc_info=err)
