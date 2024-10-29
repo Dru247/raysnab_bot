@@ -621,16 +621,16 @@ def checks(message):
             ),
         ]
         keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(*inline_keys)
-        msg_text = '''
-            "Проверка номеров" - разница номеров и ICC ID на проекте и на сайте МТС\n
-            "Проверка перерасхода СИМ-карт" - сим-карты с расходом более 28 руб.\n
-            "Проверка блокировок СИМ-карт" - разница активных номеров на проекте и сайте МТС (~1,5 часа)\n
-            "Проверка объектов GLONASSsoft" - разница активных объектов на проекте и GLONASSSoft\n
-            "Потерянные трекеры" - трекеры без установок и не на руках
-        '''
+        keyboard.add(*inline_keys, row_width=1)
+        msg_text = (
+            '"Проверка номеров" - разница номеров и ICC ID на проекте и на сайте МТС\n'
+            '"Проверка перерасхода СИМ-карт" - сим-карты с расходом более 28 руб.\n'
+            '"Проверка блокировок СИМ-карт" - разница активных номеров на проекте и сайте МТС (~1,5 часа)\n'
+            '"Проверка объектов GLONASSsoft" - разница активных объектов на проекте и GLONASSSoft\n'
+            '"Потерянные трекеры" - трекеры без установок и не на руках'
+        )
         bot.send_message(
-            message.from_user.id,
+            chat_id=message.chat.id,
             text=msg_text,
             reply_markup=keyboard)
     except Exception as err:
@@ -760,7 +760,7 @@ def take_text(message):
         elif message.text.lower() == commands[8].lower():
              payment_request_data_payer(message)
         elif message.text.lower() == commands[9].lower():
-             checks(message.chat.id)
+             checks(message)
         else:
             logging.warning(f"func take_text: not understend question: {message.text}")
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')
