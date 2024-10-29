@@ -1,8 +1,6 @@
 import configs
-import time
-from distutils.command.config import config
-
 import requests
+import time
 
 
 gl_token = ''

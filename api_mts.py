@@ -388,14 +388,20 @@ def get_list_numbers():
 
         while pagination:
             response = request_list_numbers(page_num)
-            pagination = response[0]["partyRole"][0]["customerAccount"][0].get("href")
-            [numbers.append((number["product"]["productCharacteristic"][1]["value"], number["product"]["productSerialNumber"])) for number in response[0]["partyRole"][0]["customerAccount"][0]["productRelationship"]]
-            page_num += 1
-            time.sleep(1)
+            try:
+                pagination = response[0]["partyRole"][0]["customerAccount"][0].get("href")
+                [numbers.append((number["product"]["productCharacteristic"][1]["value"], number["product"]["productSerialNumber"])) for number in response[0]["partyRole"][0]["customerAccount"][0]["productRelationship"]]
+                page_num += 1
+                time.sleep(1)
+            except Exception as err:
+                logging.critical(
+                    msg=f'response = {response}',
+                    exc_info=err
+                )
 
         return numbers
-    except Exception:
-        logging.critical(msg="func get_list_numbers - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def get_list_all_icc():
@@ -404,27 +410,26 @@ def get_list_all_icc():
         list_icc_numbers = get_list_numbers()
         list_icc_numbers.extend([(icc, None) for icc in get_vacant_sim_cards()])
         return list_icc_numbers
-    except Exception:
-        logging.critical(msg="func get_list_all_icc - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
-
-def get_vacant_sim_card_exchange(number, last_iccid):
+def get_vacant_sim_card_exchange(number, last_icc_id):
     try:
-        response = request_vacant_sim_cards(number, last_iccid)
-        if "fault" in response:
-            error, result, text = 1, 0, "Неверный запрос"
+        response = request_vacant_sim_cards(number, last_icc_id)
+        if 'fault' in response:
+            error, result, text = 1, 0, 'Неверный запрос'
         else:
             sim_card = response.get("simList")
             if not sim_card:
-                error, result, text = 0, 0, "Нет доступной сим-карты"
+                error, result, text = 0, 0, 'Нет доступной сим-карты'
             elif len(sim_card) > 1:
-                error, result, text = 0, 0, "Сим-карт больше 1"
+                error, result, text = 0, 0, 'Сим-карт больше 1'
             else:
                 error, result, text = 0, 1, f'{sim_card[0].get("iccId")} {sim_card[0].get("imsi")}'
         return result, result, text
-    except Exception:
-        logging.critical(msg="func get_vacant_sim_card_exchange - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def request_exchange_sim_card(number, imsi):

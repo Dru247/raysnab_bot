@@ -21,7 +21,7 @@ logging.basicConfig(
     level=logging.INFO,
     filename="logs.log",
     filemode="a",
-    format="%(asctime)s %(levelname)s %(message)s")
+    format="%(asctime)s %(filename)s:%(lineno)s%(funcName)20s() %(levelname)s %(message)s")
 schedule_logger = logging.getLogger('schedule')
 schedule_logger.setLevel(level=logging.DEBUG)
 
@@ -36,18 +36,15 @@ commands = [
     'Замена сим-карты',
     'Список болванок МТС',
     'Список СИМ-карт',
-    'Сравнить номера',
-    'Проверка активности сим-карт',
-    'Сравнить GLONASSsoft',
     'Оплата',
-    'Потерянные терминалы'
+    'Проверки'
 ]
 keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
 keyboard_main.add(*[types.KeyboardButton(comm) for comm in commands])
 
 
 def check_user(message):
-    """Проверяет пользоватиеля на право выполнения команд"""
+    """Проверяет пользователя на право выполнения команд"""
     try:
         user_id = message.chat.id
         with sq.connect(configs.database) as con:
@@ -293,9 +290,13 @@ def mts_get_account_balance():
         logging.critical(msg="func mts_get_account_balance - error", exc_info=True)
 
 
-def mts_check_num_balance(balance=0, morning=False):
+def mts_check_num_balance(msg_chat_id=None, critical=False):
     """Проверяет номера МТС на КРИТИЧЕСКИЙ перерасход и отправляет сотрудникам в чат"""
     try:
+        if critical:
+            balance = configs.critical_balance
+        else:
+            balance = configs.warning_balance
         records = api_mts.get_balance_numbers(balance)
         if records:
             records.sort(key=lambda a: a[1], reverse=True)
@@ -303,23 +304,30 @@ def mts_check_num_balance(balance=0, morning=False):
             overspending = 0
             for record in records:
                 number, sim_balance = record
-                msg_text += f"\n{number} - {sim_balance}"
+                msg_text += f'\n{number} - {sim_balance}'
                 overspending += sim_balance - balance
             msgs = cut_msg_telegram(msg_text)
-            if morning:
-                chats = [configs.telegram_my_id]
-                bot.send_message(chat_id=configs.telegram_my_id, text=f'Общий перерасход: {overspending}')
-            else:
+            if critical:
                 with sq.connect(configs.database) as con:
                     cur = con.cursor()
                     cur.execute('SELECT data FROM contacts WHERE contact_type = 3')
                     result = cur.fetchall()
                     chats = [chat[0] for chat in result]
-            for chat in chats:
+                for chat in chats:
+                    for msg in msgs:
+                        bot.send_message(chat_id=chat, text=msg)
+            else:
                 for msg in msgs:
-                    bot.send_message(chat_id=chat, text=msg)
+                    bot.send_message(chat_id=msg_chat_id, text=msg)
+                bot.send_message(chat_id=msg_chat_id, text=f'Общий перерасход: {overspending}')
+
+
     except Exception as err:
-        logging.critical(msg='func mts_check_balance - error', exc_info=err)
+        logging.critical(msg='', exc_info=err)
+        bot.send_message(
+            chat_id=configs.telegram_my_id,
+            text='Ошибка проверки критического баланса МТС'
+        )
 
 
 def check_email(imap_server=configs.imap_server_yandex, email_login=configs.ya_mary_email_login, email_password=configs.ya_mary_email_password, teleg_id=configs.id_teleg_mary):
@@ -335,35 +343,8 @@ def check_email(imap_server=configs.imap_server_yandex, email_login=configs.ya_m
                 teleg_id,
                 text=f"На почте {email_login} есть непрочитанные письма, в кол-ве {len(id_unseen_msgs)} шт."
             )
-    except Exception:
-        logging.error("func check email - error", exc_info=True)
-
-
-# def get_emails():
-#     try:
-#         with sq.connect(configs.database) as con:
-#             cur = con.cursor()
-#             cur.execute("""
-#                 SELECT human, data
-#                 FROM contacts
-#                 WHERE contact_type = 1
-#             """)
-#             contacts = cur.fetchall()
-#             for contact in contacts:
-#                 cur.execute(f"""
-#                     SELECT data
-#                     FROM contacts
-#                     WHERE human = {contact[0]}
-#                     AND contact_type = 3
-#                 """)
-#                 check_email(
-#                     email_login=contact[1],
-#                     teleg_id=cur.fetchone()[0],
-#                     imap_server=configs.imap_yandex,
-#                     email_password=configs.email_passwords[0]
-#                 )
-#     except Exception:
-#         logging.error("func get_emails- error", exc_info=True)
+    except Exception as err:
+        logging.error(msg='', exc_info=err)
 
 
 def get_numbers_payer_or_date(message):
@@ -490,11 +471,11 @@ def check_active_mts_sim_cards(msg_chat_id, morning=False):
 
 def check_glonasssoft_dj_objects(message):
     try:
-        gonasssoft_objs = [obj.get('imei') for obj in api_glonasssoft.request_list_objects(configs.glonasssoft_org_id)]
+        glonasssoft_objs = [obj.get('imei') for obj in api_glonasssoft.request_list_objects(configs.glonasssoft_org_id)]
         user_list_target_serv = [user.get('id') for user in api_dj.api_request_user_list() if user.get('server') == 4]
         project_objs = [obj.get('terminal') for obj in api_dj.api_request_object_list() if obj.get('wialon_user') in user_list_target_serv and obj.get('active')]
         terminals = {term.get('id'): term.get('imei') for term in api_dj.api_request_terminal_list()}
-        result = set(gonasssoft_objs) ^ set([terminals[obj] for obj in project_objs])
+        result = set(glonasssoft_objs) ^ set([terminals[obj] for obj in project_objs])
         msg_text = 'Разница\n' + '\n'.join(result)
         bot.send_message(chat_id=message.chat.id,  text=msg_text)
     except Exception:
@@ -614,6 +595,48 @@ def check_diff_terminals(msg_chat_id):
         logging.critical(msg="func get_diff_terminals - error", exc_info=err)
 
 
+def checks(message):
+    """Выдаёт список проверок"""
+    try:
+        inline_keys = [
+            types.InlineKeyboardButton(
+                text='Проверка номеров',
+                callback_data=f'check_numbers'
+            ),
+            types.InlineKeyboardButton(
+                text='Проверка перерасхода СИМ-карт',
+                callback_data=f'check_overspend_sim_cards'
+            ),
+            types.InlineKeyboardButton(
+                text='Проверка блокировок СИМ-карт',
+                callback_data=f'check_active_sim_cards'
+            ),
+            types.InlineKeyboardButton(
+                text='Проверка объектов GLONASSsoft',
+                callback_data=f'check_glonasssoft'
+            ),
+            types.InlineKeyboardButton(
+                text='Потерянные трекеры',
+                callback_data=f'check_lost_trackers'
+            ),
+        ]
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(*inline_keys)
+        msg_text = '''
+            "Проверка номеров" - разница номеров и ICC ID на проекте и на сайте МТС\n
+            "Проверка перерасхода СИМ-карт" - сим-карты с расходом более 28 руб.\n
+            "Проверка блокировок СИМ-карт" - разница активных номеров на проекте и сайте МТС (~1,5 часа)\n
+            "Проверка объектов GLONASSsoft" - разница активных объектов на проекте и GLONASSSoft\n
+            "Потерянные трекеры" - трекеры без установок и не на руках
+        '''
+        bot.send_message(
+            message.from_user.id,
+            text=msg_text,
+            reply_markup=keyboard)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
 def morning_check():
     """
     Утренний скрипт: проверка баланса ЛС,
@@ -623,7 +646,7 @@ def morning_check():
     """
     try:
         mts_get_account_balance()
-        mts_check_num_balance(balance=configs.warning_balance, morning=True)
+        mts_check_num_balance(msg_chat_id=configs.telegram_my_id)
         check_mts_sim_cards(msg_chat_id=configs.telegram_job_id)
         check_diff_terminals(msg_chat_id=configs.telegram_job_id)
         check_active_mts_sim_cards(msg_chat_id=configs.telegram_job_id, morning=True)
@@ -634,7 +657,7 @@ def morning_check():
 def schedule_main():
     try:
         schedule.every().day.at("06:00", timezone(configs.timezone_my)).do(morning_check)
-        schedule.every().hour.at(":00").do(mts_check_num_balance, balance=configs.critical_balance)
+        schedule.every().hour.at(":00").do(mts_check_num_balance, crirtical=True)
         schedule.every().day.at("09:00", timezone(configs.timezone_my)).do(check_email)
         schedule.every().day.at("15:00", timezone(configs.timezone_my)).do(check_email)
         schedule.every().day.at("21:00", timezone(configs.timezone_my)).do(check_email)
@@ -643,8 +666,8 @@ def schedule_main():
             schedule.run_pending()
             time.sleep(1)
 
-    except Exception:
-        logging.error("func schedule_main - error", exc_info=True)
+    except Exception as err:
+        logging.error(msg='', exc_info=err)
 
 
 @bot.message_handler(commands=['start'])
@@ -663,22 +686,22 @@ def start_message(message):
 @bot.message_handler(commands=['commands', 'help'])
 def help_message(message):
     if check_user(message):
-        text = ("1. Можно вводить команды, недожидаясь завершения другой\n"
+        text = ("1. Можно вводить команды, не дожидаясь завершения другой\n"
                 "2. Можно вводить номера через 7, 8 или без первой цифры, т.е. 79998887766, 89998887766, 9998887766\n"
-                "3. Можно вводить команду с несколькоми номерами, "
+                "3. Можно вводить команду с несколькими номерами, "
                 "нужно вводить их в столбик, без дополнительных знаков. Например:\n"
                 "9998887766\n"
                 "79998887766\n"
                 "89998887766\n"
                 '4. "Разблокировка рандом" разблокирует номера в диапазоне 3-12 часов после отправки команды\n'
-                '5. "Блоркировка в конце месяца" запускает отложенную блокировку в 23:5N:NN в последний день месяца')
+                '5. "Блокировка в конце месяца" запускает отложенную блокировку в 23:5N:NN в последний день месяца')
         bot.send_message(
             message.chat.id,
             text=text,
             reply_markup=keyboard_main
         )
     else:
-        bot.send_message(chat_id=message.chat.id, text="В другой раз")
+        bot.send_message(chat_id=message.chat.id, text='В другой раз')
 
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -687,13 +710,25 @@ def callback_query(call):
         get_list_date_sim_cards(call.message)
     elif 'get_numbers_id_payer' in call.data:
         get_number_payer_sim_cards(call.message)
-    elif "mts_yes_exchange_sim" in call.data:
+
+    elif 'check_numbers' in call.data:
+        check_mts_sim_cards(call.message.chat.id)
+    elif 'check_overspend_sim_cards' in call.data:
+        mts_check_num_balance(msg_chat_id=call.message.chat.id)
+    elif 'check_active_sim_cards' in call.data:
+        check_active_mts_sim_cards(call.message.chat.id)
+    elif 'check_glonasssoft' in call.data:
+        check_glonasssoft_dj_objects(call.message)
+    elif 'check_lost_trackers' in call.data:
+        check_diff_terminals(call.message.chat.id)
+
+    elif 'mts_yes_exchange_sim' in call.data:
         mts_yes_exchange_sim(call.message, call.data)
-    elif "mts_no_exchange_sim" in call.data:
+    elif 'mts_no_exchange_sim' in call.data:
         mts_exchange_no(call.message)
-    elif "mts_block_exchange_sim" in call.data:
+    elif 'mts_block_exchange_sim' in call.data:
         mts_block_exchange_sim(call.message, call.data)
-    elif "mts_noblock_exchange_sim" in call.data:
+    elif 'mts_noblock_exchange_sim' in call.data:
         mts_exchange_no(call.message)
     elif 'payment_change_date' in call.data:
         payment_change_date(call.message, call.data)
@@ -723,15 +758,9 @@ def take_text(message):
         elif message.text.lower() == commands[7].lower():
             get_numbers_payer_or_date(message)
         elif message.text.lower() == commands[8].lower():
-             check_mts_sim_cards(message.chat.id)
-        elif message.text.lower() == commands[9].lower():
-             check_active_mts_sim_cards(message.chat.id)
-        elif message.text.lower() == commands[10].lower():
-             check_glonasssoft_dj_objects(message)
-        elif message.text.lower() == commands[11].lower():
              payment_request_data_payer(message)
-        elif message.text.lower() == commands[12].lower():
-             check_diff_terminals(message.chat.id)
+        elif message.text.lower() == commands[9].lower():
+             checks(message.chat.id)
         else:
             logging.warning(f"func take_text: not understend question: {message.text}")
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')
