@@ -492,12 +492,17 @@ def check_active_mts_sim_cards(msg_chat_id, morning=False):
 def check_glonasssoft_dj_objects(msg_chat_id):
     """Выдаёт разницу объектов на CLONASSSoft"""
     try:
-        glonasssoft_objs = [obj.get('imei') for obj in api_glonasssoft.request_list_objects(configs.glonasssoft_org_id)]
-        user_list_target_serv = [user.get('id') for user in api_dj.api_request_user_list() if user.get('server') == 4]
-        project_objs = [obj.get('terminal') for obj in api_dj.api_request_object_list() if obj.get('wialon_user') in user_list_target_serv and obj.get('active')]
+        date_now = datetime.datetime.today()
+        glonasssoft_objs = {obj.get('imei') for obj in api_glonasssoft.request_list_objects(configs.glonasssoft_org_id)}
+        user_list_target_serv = {user.get('id') for user in api_dj.api_request_user_list() if user.get('server') == 4}
+        project_objs = {
+            obj.get('terminal') for obj in api_dj.api_request_object_list()
+            if obj.get('wialon_user') in user_list_target_serv
+            and datetime.datetime.fromisoformat(obj.get('date_change_status')) >= date_now
+        }
         terminals = {term.get('id'): term.get('imei') for term in api_dj.api_request_terminal_list()}
-        result = set(glonasssoft_objs) ^ set([terminals[obj] for obj in project_objs])
-        msg_text = 'Разница трекеров GLONASSSoft:\n' + '\n'.join(result)
+        result = glonasssoft_objs ^ {terminals[obj] for obj in project_objs}
+        msg_text = f'Разница трекеров GLONASSSoft: {len(result)}\n' + '\n'.join(result)
         bot.send_message(chat_id=msg_chat_id,  text=msg_text)
     except Exception as err:
         logging.critical(msg='', exc_info=err)
@@ -573,8 +578,8 @@ def payment_request_date(message, msg_payer):
             message.from_user.id,
             text='Выбери дату',
             reply_markup=keyboard)
-    except Exception:
-        logging.critical(msg="func payment_request_date - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def payment_request_custom_date(message, call_data):
@@ -582,8 +587,8 @@ def payment_request_custom_date(message, call_data):
     try:
         msg = bot.send_message(chat_id=message.chat.id, text='Введи дату в формате "2000-01-31"')
         bot.register_next_step_handler(message=msg, callback=payment_change_date, call_data=call_data)
-    except Exception:
-        logging.critical(msg="func payment_request_custom_date - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def payment_change_date(message, call_data):
