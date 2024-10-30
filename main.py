@@ -578,21 +578,27 @@ def payment_request_payer(message, call_data):
     try:
         if call_data == 'payment_choice_msg':
             msg_text = 'Перешли сообщение плательщика'
-            msg_payer = 1
+            msg_payer = True
         else:
-            msg_payer = 0
+            msg_payer = False
             msg_text = 'Напиши ID плательщика'
         msg = bot.send_message(chat_id=message.chat.id, text=msg_text)
         bot.register_next_step_handler(message=msg, callback=payment_request_date, msg_payer=msg_payer)
-    except Exception:
-        logging.critical(msg="func payment_request_payer - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def payment_request_date(message, msg_payer):
     """Выбор даты оплаченного периода"""
     try:
         if msg_payer:
-            tele_id_payer = message.forward_from.id
+            try:
+                tele_id_payer = message.forward_from.id
+            except AttributeError as err:
+                logging.error(msg='', exc_info=err)
+                bot.send_message(chat_id=message.chat.id, text=f'Проблемка, уже решаем')
+                bot.send_message(chat_id=configs.telegram_my_id, text='Оплата по пересланному сообщению не сработала')
+                return
             payer_id = api_dj.get_human_for_from_teleg_id(tele_id_payer)
             if not payer_id:
                 bot.send_message(chat_id=message.chat.id, text=f'{tele_id_payer} - не зарегистрирован')
@@ -746,6 +752,7 @@ def morning_check():
     4. сравнение активных сим-карт
     """
     try:
+        logging.info(msg='Start main:morning_check()')
         mts_get_account_balance()
         check_sim_cards_in_dj(msg_chat_id=configs.telegram_my_id)
         mts_check_num_balance(msg_chat_id=configs.telegram_my_id)
@@ -759,11 +766,11 @@ def morning_check():
 
 def schedule_main():
     try:
-        schedule.every().day.at("06:00", timezone(configs.timezone_my)).do(morning_check)
-        schedule.every().hour.at(":00").do(mts_check_num_balance, crirtical=True)
-        schedule.every().day.at("09:00", timezone(configs.timezone_my)).do(check_email)
-        schedule.every().day.at("15:00", timezone(configs.timezone_my)).do(check_email)
-        schedule.every().day.at("21:00", timezone(configs.timezone_my)).do(check_email)
+        schedule.every().day.at('06:00', timezone(configs.timezone_my)).do(morning_check)
+        schedule.every().hour.at(':00').do(mts_check_num_balance, crirtical=True)
+        schedule.every().day.at('09:00', timezone(configs.timezone_my)).do(check_email)
+        schedule.every().day.at('15:00', timezone(configs.timezone_my)).do(check_email)
+        schedule.every().day.at('21:00', timezone(configs.timezone_my)).do(check_email)
 
         while True:
             schedule.run_pending()

@@ -73,10 +73,9 @@ def get_status_request(event_id):
             json=js_data
         )
         response = response.json()
-        logging.info(f"get_status_request - response: {response}")
         return response
-    except Exception:
-        logging.critical(msg="func get_status_request - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def check_status_request(event_id):
