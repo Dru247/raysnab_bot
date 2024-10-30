@@ -31,7 +31,7 @@ commands = [
     'Статус блокировки',
     'Разблокировать номер',
     'Заблокировать номер',
-    'Замена сим-карты',
+    'Замена СИМ-карты',
     'Список болванок МТС',
     'Список СИМ-карт',
     'Оплата',
@@ -53,8 +53,8 @@ def check_user(message):
             )
             result = cur.fetchone()[0]
         return result
-    except Exception:
-        logging.critical(msg="func check_user - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def check_number(number):
@@ -133,12 +133,12 @@ def mts_block_info(message):
             elif result:
                 msg_text = f"Добровольная блокировка: ACTIVE\nДата активации: {text}"
             else:
-                msg_text = "Добровольная блокировка отсутвует"
+                msg_text = "Добровольная блокировка отсутствует"
         else:
             msg_text = "Неверный формат номера"
         bot.send_message(chat_id=message.chat.id, text=msg_text)
-    except Exception:
-        logging.critical(msg="func mts_block_info - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def mts_activate_num_choice(message):
@@ -169,8 +169,8 @@ def mts_request_numbers(message, target_func):
     try:
         msg = bot.send_message(chat_id=message.chat.id, text="Введи номер или номера в столбик")
         bot.register_next_step_handler(message=msg, callback=mts_add_del_services, target_func=target_func)
-    except Exception:
-        logging.critical(msg="func mts_request_numbers - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def mts_add_del_services(message, target_func):
@@ -207,24 +207,65 @@ def mts_add_del_services(message, target_func):
         logging.critical(msg='', exc_info=err)
 
 
-def mts_exchange_sim(message):
-    """Выводит первый номер для замены МТС и спрашивает про ICC ID"""
+def mts_exchange_choice_get_number(message):
+    """Запрос на выбор способа получения номера СИМ-карты"""
     try:
-        number, num_date = api_dj.get_first_number_for_change()
-        bot.send_message(chat_id=message.chat.id, text=f'Номер: {number}\nДата: {num_date}')
-        msg = bot.send_message(chat_id=message.chat.id, text="Введи последние 4е знака ICC ID")
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(
+            types.InlineKeyboardButton(
+                text='Следующий номер в очереди по дате',
+                callback_data='mts_exchange_sim_next_number'
+            ),
+            types.InlineKeyboardButton(
+                text='Ввести номер самостоятельно',
+                callback_data='mts_exchange_sim_input_number'
+            ),
+            row_width=1
+        )
+        bot.send_message(
+            chat_id=message.chat.id,
+            text='Какой номер сим-карты?',
+            reply_markup=keyboard
+        )
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def mts_exchange_sim_input_number(message):
+    """Запрос ввода номера СИМ-карты"""
+    try:
+        msg = bot.send_message(chat_id=message.chat.id, text='Введи номер для замены')
+        bot.register_next_step_handler(message=msg, callback=mts_exchange_sim, number=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def mts_exchange_sim(message, number=False):
+    """Выводит первый номер для замены МТС или проверяет введённый и спрашивает про ICC ID"""
+    try:
+        if not number:
+            number, num_date = api_dj.get_first_number_for_change()
+            bot.send_message(chat_id=message.chat.id, text=f'Номер: {number}\nДата: {num_date}')
+        else:
+            number = message.text
+            check, number = check_number(number)
+            if not check:
+                bot.send_message(chat_id=message.chat.id, text='Неверный формат номера')
+                return
+        msg = bot.send_message(chat_id=message.chat.id, text='Введи последние 4е знака ICC ID')
         bot.register_next_step_handler(message=msg, callback=mts_exchange_sim_second, number=number)
     except Exception as err:
-        logging.critical(msg="func mts_exchange_sim - error", exc_info=err)
+        logging.critical(msg='', exc_info=err)
 
 
 def mts_exchange_sim_second(message, number):
+    """"""
     try:
-        last_iccid = message.text
-        if last_iccid.isdigit():
-            error, result, text = api_mts.get_vacant_sim_card_exchange(number, last_iccid)
+        last_icc_id = message.text
+        if last_icc_id.isdigit():
+            error, result, text = api_mts.get_vacant_sim_card_exchange(number, last_icc_id)
             if result:
-                iccid, imsi = text.split()
+                icc_id, imsi = text.split()
                 keyboard = types.InlineKeyboardMarkup()
                 keyboard.add(
                     types.InlineKeyboardButton(
@@ -238,12 +279,13 @@ def mts_exchange_sim_second(message, number):
                 )
                 bot.send_message(
                     chat_id=message.chat.id,
-                    text=f"{number} +> {iccid}. Меняем?",
-                    reply_markup=keyboard)
+                    text=f'{number} +> {icc_id}. Меняем?',
+                    reply_markup=keyboard
+                )
             else:
                 bot.send_message(chat_id=message.chat.id, text=f"{text}")
-    except Exception:
-        logging.critical(msg="func mts_exchange_sim_second - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def mts_yes_exchange_sim(message, call_data):
@@ -791,6 +833,10 @@ def callback_query(call):
     elif 'mts_activate_num_random' in call.data:
         mts_request_numbers(call.message, target_func=api_mts.del_block_random_hours)
 
+    elif 'mts_exchange_sim_next_number' in call.data:
+        mts_exchange_sim(call.message)
+    elif 'mts_exchange_sim_input_number' in call.data:
+        mts_exchange_sim_input_number(call.message)
     elif 'mts_yes_exchange_sim' in call.data:
         mts_yes_exchange_sim(call.message, call.data)
     elif 'mts_no_exchange_sim' in call.data:
@@ -818,15 +864,15 @@ def take_text(message):
         elif message.text.lower() == commands[2].lower():
             mts_request_numbers(message, target_func=api_mts.add_block)
         elif message.text.lower() == commands[3].lower():
-            mts_exchange_sim(message)
+            mts_exchange_choice_get_number(message)
         elif message.text.lower() == commands[4].lower():
-             get_list_vacant_sim_cards(message)
+            get_list_vacant_sim_cards(message)
         elif message.text.lower() == commands[5].lower():
             get_numbers_payer_or_date(message)
         elif message.text.lower() == commands[6].lower():
-             payment_request_data_payer(message)
+            payment_request_data_payer(message)
         elif message.text.lower() == commands[7].lower():
-             checks(message)
+            checks(message)
         else:
             logging.warning(f'func take_text: not understand question: {message.text}')
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')
