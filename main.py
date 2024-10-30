@@ -767,7 +767,7 @@ def morning_check():
 def schedule_main():
     try:
         schedule.every().day.at('06:00', timezone(configs.timezone_my)).do(morning_check)
-        schedule.every().hour.at(':00').do(mts_check_num_balance, crirtical=True)
+        schedule.every().hour.at(':00').do(mts_check_num_balance, critical=True)
         schedule.every().day.at('09:00', timezone(configs.timezone_my)).do(check_email)
         schedule.every().day.at('15:00', timezone(configs.timezone_my)).do(check_email)
         schedule.every().day.at('21:00', timezone(configs.timezone_my)).do(check_email)
