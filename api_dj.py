@@ -19,7 +19,20 @@ def api_request_human_term_list():
         ).json()
         return response
     except Exception as err:
-        logging.critical(msg="func dj_api.api_request_human_term_list - error", exc_info=err)
+        logging.critical(msg='', exc_info=err)
+
+
+def api_request_human_sim_list():
+    """Запрос списка сим-карт на руках"""
+    try:
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url='http://89.169.136.83/api/v1/human-sim-cards/',
+            headers=headers
+        ).json()
+        return response
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def api_request_installations_list():
@@ -69,7 +82,7 @@ def api_request_object_change_date(obj_id, date_target):
 
 
 def api_request_sim_list():
-    """Главный API запрос"""
+    """Запрос списка сим-карт"""
     try:
         headers = {"Authorization": f"Token {drf_token}"}
         response = requests.get(
@@ -277,5 +290,24 @@ def get_diff_terminals():
             if term['id'] in intersection_trackers
         }
         return diff_trackers_all_vs_install_and_on_hands, diff_trackers_on_hands_and_obj
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def check_sim_cards_in_dj():
+    """Проверка сим-карт внутри проекта"""
+    try:
+        request_all_sim_cards = api_request_sim_list()
+        id_sim_in_trackers = {sim['id'] for sim in request_all_sim_cards if sim['terminal']}
+        id_sim_on_hands = {sim['simcard'] for sim in api_request_human_sim_list()}
+        id_sim_in_trackers_and_on_hands = id_sim_in_trackers & id_sim_on_hands
+        sim_in_trackers_and_on_hands = {
+            sim['icc'] for sim in request_all_sim_cards if sim['id'] in id_sim_in_trackers_and_on_hands
+        }
+        id_sim_everywhere = id_sim_in_trackers | id_sim_on_hands
+        sim_not_everywhere = {
+            sim['icc'] for sim in request_all_sim_cards if sim['id'] not in id_sim_everywhere
+        }
+        return sim_in_trackers_and_on_hands, sim_not_everywhere
     except Exception as err:
         logging.critical(msg='', exc_info=err)

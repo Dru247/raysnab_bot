@@ -611,7 +611,6 @@ def payment_change_date(message, call_data):
 def check_diff_terminals(msg_chat_id):
     """Возвращает список потерянных терминалов"""
     try:
-
         diff_trackers_all_vs_install_and_on_hands, diff_trackers_on_hands_and_obj = api_dj.get_diff_terminals()
         msg_text = 'Потерянные трекеры:\n' + '\n'.join(diff_trackers_all_vs_install_and_on_hands)
         for msg_one in cut_msg_telegram(msg_text):
@@ -629,10 +628,34 @@ def check_diff_terminals(msg_chat_id):
         logging.critical(msg='', exc_info=err)
 
 
+def check_sim_cards_in_dj(msg_chat_id):
+    """Проверка сим-карт внутри проекта"""
+    try:
+        sim_in_trackers_and_on_hands, sim_not_everywhere = api_dj.check_sim_cards_in_dj()
+        msg_text = f'Сим-карты и на руках и в трекерах: {len(sim_in_trackers_and_on_hands)}\n' + '\n'.join(sim_in_trackers_and_on_hands)
+        for msg_one in cut_msg_telegram(msg_text):
+            bot.send_message(
+                chat_id=msg_chat_id,
+                text=msg_one
+            )
+        msg_text = f'СИМ-карты без наличия: {len(sim_not_everywhere)}\n' + '\n'.join(sim_not_everywhere)
+        for msg_one in cut_msg_telegram(msg_text):
+            bot.send_message(
+                chat_id=msg_chat_id,
+                text=msg_one
+            )
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
 def checks(message):
     """Выдаёт список проверок"""
     try:
         inline_keys = [
+            types.InlineKeyboardButton(
+                text='Проверка СИМ-карт на проекте',
+                callback_data=f'check_sim_cards_in_dj'
+            ),
             types.InlineKeyboardButton(
                 text='Проверка номеров',
                 callback_data=f'check_numbers'
@@ -657,6 +680,7 @@ def checks(message):
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(*inline_keys, row_width=1)
         msg_text = (
+            '"Проверка СИМ-карт на проекте" - проверка наличия сим-карт в трекерах и на руках\n'
             '"Проверка номеров" - разница номеров и ICC ID на проекте и на сайте МТС\n'
             '"Проверка перерасхода СИМ-карт" - сим-карты с расходом более 28 руб.\n'
             '"Проверка блокировок СИМ-карт" - разница активных номеров на проекте и сайте МТС (~1,5 часа)\n'
@@ -681,6 +705,7 @@ def morning_check():
     """
     try:
         mts_get_account_balance()
+        check_sim_cards_in_dj(msg_chat_id=configs.telegram_my_id)
         mts_check_num_balance(msg_chat_id=configs.telegram_my_id)
         check_mts_sim_cards(msg_chat_id=configs.telegram_job_id)
         check_diff_terminals(msg_chat_id=configs.telegram_job_id)
@@ -758,6 +783,8 @@ def callback_query(call):
         check_glonasssoft_dj_objects(call.message.chat.id)
     elif 'check_lost_trackers' in call.data:
         check_diff_terminals(call.message.chat.id)
+    elif 'check_sim_cards_in_dj' in call.data:
+        check_sim_cards_in_dj(call.message.chat.id)
 
     elif 'mts_activate_num_now' in call.data:
         mts_request_numbers(call.message, target_func=api_mts.del_block)
