@@ -595,7 +595,7 @@ def payment_request_date(message, msg_payer):
             try:
                 tele_id_payer = message.forward_from.id
             except AttributeError as err:
-                logging.error(msg='', exc_info=err)
+                logging.error(msg=message, exc_info=err)
                 bot.send_message(chat_id=message.chat.id, text=f'Проблемка, уже решаем')
                 bot.send_message(chat_id=configs.telegram_my_id, text='Оплата по пересланному сообщению не сработала')
                 return
