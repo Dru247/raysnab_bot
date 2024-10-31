@@ -6,13 +6,14 @@ import calendar
 import configs
 import imaplib
 import logging
+import openpyxl as op
 import schedule
 import sqlite3 as sq
 import time
 import threading
 
 from dateutil.relativedelta import relativedelta
-# from io import BytesIO
+from io import BytesIO
 from pytz import timezone
 from telebot import TeleBot, types
 
@@ -75,8 +76,8 @@ def check_number(number):
         else:
             logging.info(msg=f"func check_number: {number}")
             return False, number
-    except Exception:
-        logging.critical(msg="func check_number - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def check_date(date_target):
@@ -384,7 +385,6 @@ def mts_check_num_balance(msg_chat_id=None, critical=False):
                     bot.send_message(chat_id=msg_chat_id, text=msg)
                 bot.send_message(chat_id=msg_chat_id, text=f'Общий перерасход: {overspending}')
 
-
     except Exception as err:
         logging.critical(msg='', exc_info=err)
         bot.send_message(
@@ -588,6 +588,15 @@ def payment_request_payer(message, call_data):
         logging.critical(msg='', exc_info=err)
 
 
+def payment_request_payer_id(message):
+    """Запрашивает ID скрытого плательщика"""
+    try:
+        msg = bot.send_message(chat_id=message.chat.id, text='Напиши ID плательщика')
+        bot.register_next_step_handler(message=msg, callback=payment_request_date, msg_payer=False)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
 def payment_request_date(message, msg_payer):
     """Выбор даты оплаченного периода"""
     try:
@@ -596,8 +605,7 @@ def payment_request_date(message, msg_payer):
                 tele_id_payer = message.forward_from.id
             except AttributeError as err:
                 logging.error(msg=message, exc_info=err)
-                bot.send_message(chat_id=message.chat.id, text=f'Проблемка, уже решаем')
-                bot.send_message(chat_id=configs.telegram_my_id, text='Оплата по пересланному сообщению не сработала')
+                bot.send_message(chat_id=message.chat.id, text=f'ID пользователя скрыт')
                 return
             payer_id = api_dj.get_human_for_from_teleg_id(tele_id_payer)
             if not payer_id:
@@ -607,13 +615,20 @@ def payment_request_date(message, msg_payer):
                 bot.send_message(chat_id=message.chat.id, text=f'Telegram ID: {tele_id_payer}')
         else:
             payer_id = message.text
-        date_target = datetime.date.today() + relativedelta(months=+1)
-        last_day = calendar.monthrange(date_target.year, date_target.month)[1]
-        date_target = date_target.strftime(f'%Y-%m-{last_day}')
+        date_now = datetime.date.today()
+        now_month_last_day = calendar.monthrange(date_now.year, date_now.month)[1]
+        date_target_now_month = date_now.strftime(f'%Y-%m-{now_month_last_day}')
+        date_plus_month = date_now + relativedelta(months=+1)
+        date_plus_month_last_day = calendar.monthrange(date_plus_month.year, date_plus_month.month)[1]
+        date_target_plus_month  = date_plus_month.strftime(f'%Y-%m-{date_plus_month_last_day}')
         inline_keys = [
             types.InlineKeyboardButton(
-                text=date_target,
-                callback_data=f'payment_change_date {payer_id} {date_target}'
+                text=date_target_now_month,
+                callback_data=f'payment_change_date {payer_id} {date_target_now_month}'
+            ),
+            types.InlineKeyboardButton(
+                text=date_target_plus_month,
+                callback_data=f'payment_change_date {payer_id} {date_target_plus_month}'
             ),
             types.InlineKeyboardButton(
                 text='Произвольная дата',
@@ -621,7 +636,7 @@ def payment_request_date(message, msg_payer):
             ),
         ]
         keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(*inline_keys)
+        keyboard.add(*inline_keys, row_width=2)
         bot.send_message(
             message.from_user.id,
             text='Выбери дату',
@@ -653,7 +668,70 @@ def payment_change_date(message, call_data):
             api_dj.objects_change_date(payer_id, date_target)
             bot.send_message(message.chat.id, text='Успех')
     except Exception as err:
-        logging.critical(msg="func payment_change_date - error", exc_info=err)
+        logging.critical(msg='', exc_info=err)
+
+
+def request_upload_mega_exel(message):
+    """"""
+    try:
+        msg = bot.send_message(chat_id=message.chat.id, text='Загрузи МЕГАФОН')
+        bot.register_next_step_handler(message=msg, callback=upload_mega_exel)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def upload_mega_exel(message):
+    """"""
+    try:
+        file_id = message.document.file_id
+        file_info = bot.get_file(file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        excel_doc = op.load_workbook(filename=BytesIO(downloaded_file), data_only=True)
+        sheet_names = excel_doc.sheetnames
+        sheet = excel_doc[sheet_names[0]]
+        count_row = 2
+
+        while sheet.cell(row=count_row, column=1).value is not None:
+            number = sheet.cell(row=count_row, column=1).value
+            icc_id = sheet.cell(row=count_row, column=17).value
+            print(number, icc_id)
+            count_row += 1
+
+        excel_doc.close()
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def request_upload_sim2m_exel(message):
+    """"""
+    try:
+        msg = bot.send_message(chat_id=message.chat.id, text='Загрузи СИМ2М')
+        bot.register_next_step_handler(message=msg, callback=upload_sim2m_exel)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def upload_sim2m_exel(message):
+    """"""
+    try:
+        file_id = message.document.file_id
+        file_info = bot.get_file(file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        excel_doc = op.open(filename=BytesIO(downloaded_file), data_only=True)
+        sheet_names = excel_doc.sheetnames
+        sheet = excel_doc[sheet_names[0]]
+        count_row = 2
+
+        while sheet.cell(row=count_row, column=1).value is not None:
+            number = sheet.cell(row=count_row, column=6).value
+            icc_id = sheet.cell(row=count_row, column=7).value
+            status = sheet.cell(row=count_row, column=2).value
+            print(number, icc_id, status)
+            count_row += 1
+
+        excel_doc.close()
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def check_diff_terminals(msg_chat_id):
@@ -723,6 +801,14 @@ def checks(message):
             types.InlineKeyboardButton(
                 text='Потерянные трекеры',
                 callback_data=f'check_lost_trackers'
+            ),
+            types.InlineKeyboardButton(
+                text='Загрузить МЕГАФОН',
+                callback_data=f'check_upload_mega_exel'
+            ),
+            types.InlineKeyboardButton(
+                text='Загрузить СИМ2М',
+                callback_data=f'check_upload_sim2m_exel'
             )
         ]
         keyboard = types.InlineKeyboardMarkup()
@@ -754,7 +840,7 @@ def morning_check():
     try:
         logging.info(msg='Start main:morning_check()')
         mts_get_account_balance()
-        check_sim_cards_in_dj(msg_chat_id=configs.telegram_my_id)
+        check_sim_cards_in_dj(msg_chat_id=configs.telegram_job_id)
         mts_check_num_balance(msg_chat_id=configs.telegram_my_id)
         check_mts_sim_cards(msg_chat_id=configs.telegram_job_id)
         check_diff_terminals(msg_chat_id=configs.telegram_job_id)
@@ -834,6 +920,10 @@ def callback_query(call):
         check_diff_terminals(call.message.chat.id)
     elif 'check_sim_cards_in_dj' in call.data:
         check_sim_cards_in_dj(call.message.chat.id)
+    elif 'check_upload_mega_exel' in call.data:
+        request_upload_mega_exel(call.message)
+    elif 'check_upload_sim2m_exel' in call.data:
+        request_upload_sim2m_exel(call.message)
 
     elif 'mts_activate_num_now' in call.data:
         mts_request_numbers(call.message, target_func=api_mts.del_block)
