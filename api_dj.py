@@ -59,8 +59,8 @@ def api_request_object_list():
             headers=headers
         ).json()
         return response
-    except Exception:
-        logging.critical(msg="func dj_api.api_request_object_list - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def api_request_object_change_date(obj_id, date_target):
@@ -126,19 +126,22 @@ def get_list_sim_cards():
     """Возвращает список ICC и номеров"""
     try:
         return [(row['id'], row['operator'], row['number'], row['icc'], row['terminal']) for row in api_request_sim_list()]
-    except Exception:
-        logging.critical(msg="func dj_api.get_list_sim_cards - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def get_payer_sim_cards(payer):
     try:
-        id_terminals = [
+        id_terminals = {
             row['terminal'] for row in api_request_object_list()
-            if row['payer'] == payer
+            if row['payer'] == int(payer)
             and row['terminal']
             and row['active']
-        ]
-        result = [(row['operator'], row['number'], row['icc']) for row in api_request_sim_list() if row['terminal'] in id_terminals]
+        }
+        result = {
+            (row['operator'], row['number'], row['icc']) for row in api_request_sim_list()
+            if row['terminal'] in id_terminals
+        }
         mts = ['МТС:']
         mega = ['МЕГА:']
         sim2m = ['СИМ2М:']
@@ -150,8 +153,8 @@ def get_payer_sim_cards(payer):
             else:
                 sim2m.append(sim[1])
         return mts, mega, sim2m
-    except Exception:
-        logging.critical(msg="func dj_api.get_payer_sim_cards - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def get_date_terminals(date):

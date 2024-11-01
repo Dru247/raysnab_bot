@@ -440,19 +440,19 @@ def get_number_payer_sim_cards(message):
         logging.error(msg='', exc_info=err)
 
 
-def get_list_payer_sim_cards(message, id_payer=None):
+def get_list_payer_sim_cards(message, payer_id=None):
     """Отправляет сообщение со списком номеров сим-карт по плательщику"""
     try:
-        if not id_payer:
-            id_payer = int(message.text)
-        sim_cards = api_dj.get_payer_sim_cards(id_payer)
+        if not payer_id:
+            payer_id = message.text
+        sim_cards = api_dj.get_payer_sim_cards(payer_id)
         for sim_list in sim_cards:
             bot.send_message(
                 chat_id=message.chat.id,
                 text='\n'.join(sim_list)
             )
-    except Exception:
-        logging.error("func get_list_payer_sim_cards - error", exc_info=True)
+    except Exception as err:
+        logging.error(msg='', exc_info=err)
 
 
 def get_list_date_sim_cards(message):
@@ -460,8 +460,8 @@ def get_list_date_sim_cards(message):
     try:
         msg = bot.send_message(chat_id=message.chat.id, text='Напиши дату в формате "2000-12-31"')
         bot.register_next_step_handler(message=msg, callback=get_list_date_sim_cards_handler)
-    except Exception:
-        logging.error("func get_list_date_sim_cards - error", exc_info=True)
+    except Exception as err:
+        logging.error(msg='', exc_info=err)
 
 
 def get_list_date_sim_cards_handler(message):
@@ -557,12 +557,12 @@ def payment_request_data_payer(message):
         inline_keys = [
             types.InlineKeyboardButton(
                 text='По ID',
-                callback_data=f'payment_choice_id'
+                callback_data='payment_choice_id'
             ),
             types.InlineKeyboardButton(
                 text='По сообщению',
-                callback_data=f'payment_choice_msg'
-            ),
+                callback_data='payment_choice_msg'
+            )
         ]
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(*inline_keys)
@@ -570,51 +570,51 @@ def payment_request_data_payer(message):
             message.from_user.id,
             text='Выбери способ определения плательщика',
             reply_markup=keyboard)
-    except Exception:
-        logging.critical(msg="func payment_request_data_payer - error", exc_info=True)
-
-
-def payment_request_payer(message, call_data):
-    """Запрашивает ID плательщика у которого нужно зарегистрировать платёж в объектах"""
-    try:
-        if call_data == 'payment_choice_msg':
-            msg_text = 'Перешли сообщение плательщика'
-            msg_payer = True
-        else:
-            msg_payer = False
-            msg_text = 'Напиши ID плательщика'
-        msg = bot.send_message(chat_id=message.chat.id, text=msg_text)
-        bot.register_next_step_handler(message=msg, callback=payment_request_date, msg_payer=msg_payer)
     except Exception as err:
         logging.critical(msg='', exc_info=err)
 
 
 def payment_request_payer_id(message):
-    """Запрашивает ID скрытого плательщика"""
+    """Запрашивает ID плательщика"""
     try:
         msg = bot.send_message(chat_id=message.chat.id, text='Напиши ID плательщика')
-        bot.register_next_step_handler(message=msg, callback=payment_request_date, msg_payer=False)
+        bot.register_next_step_handler(message=msg, callback=payment_request_date)
     except Exception as err:
         logging.critical(msg='', exc_info=err)
 
 
-def payment_request_date(message, msg_payer):
-    """Выбор даты оплаченного периода"""
+def payment_request_payer_msg(message):
+    """Запрашивает сообщение плательщика у которого нужно зарегистрировать платёж в объектах"""
     try:
-        if msg_payer:
-            try:
-                tele_id_payer = message.forward_from.id
-            except AttributeError as err:
-                logging.error(msg=message, exc_info=err)
-                bot.send_message(chat_id=message.chat.id, text=f'ID пользователя скрыт')
-                return
+        msg = bot.send_message(chat_id=message.chat.id, text='Перешли сообщение плательщика')
+        bot.register_next_step_handler(message=msg, callback=payment_request_payer_msg_handler)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def payment_request_payer_msg_handler(message):
+    """Обрабатывает сообщение плательщика"""
+    try:
+        try:
+            tele_id_payer = message.forward_from.id
             payer_id = api_dj.get_human_for_from_teleg_id(tele_id_payer)
             if not payer_id:
                 bot.send_message(chat_id=message.chat.id, text=f'{tele_id_payer} - не зарегистрирован')
-                return
             else:
                 bot.send_message(chat_id=message.chat.id, text=f'Telegram ID: {tele_id_payer}')
-        else:
+            payment_request_date(message, payer_id)
+        except AttributeError as err:
+            bot.send_message(chat_id=message.chat.id, text=f'ID пользователя скрыт')
+            payment_request_payer_id(message)
+
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def payment_request_date(message, payer_id=None):
+    """Выбор даты оплаченного периода"""
+    try:
+        if not payer_id:
             payer_id = message.text
         date_now = datetime.date.today()
         now_month_last_day = calendar.monthrange(date_now.year, date_now.month)[1]
@@ -658,6 +658,7 @@ def payment_request_custom_date(message, call_data):
 def payment_change_date(message, call_data):
     """Регистрирует оплаченную дату в объектах плательщика"""
     try:
+
         if len(call_data.split()) == 2:
             payer_id = call_data.split()[1]
             date_target = message.text
@@ -671,11 +672,11 @@ def payment_change_date(message, call_data):
             keyboard.add(
                 types.InlineKeyboardButton(
                     text='Вывести СИМ-карты плательщика',
-                    callback_data=f'get_sim_cards_payers {payer_id}'
+                    callback_data=f'payment_get_sim_cards_payers {payer_id}'
                 )
             )
             bot.send_message(
-                message.from_user.id,
+                message.chat.id,
                 text='Успех',
                 reply_markup=keyboard)
     except Exception as err:
@@ -769,7 +770,7 @@ def check_sim_cards_in_dj(msg_chat_id):
     """Проверка сим-карт внутри проекта"""
     try:
         sim_in_trackers_and_on_hands, sim_not_everywhere = api_dj.check_sim_cards_in_dj()
-        msg_text = f'Сим-карты и на руках и в трекерах: {len(sim_in_trackers_and_on_hands)}\n' + '\n'.join(sim_in_trackers_and_on_hands)
+        msg_text = f'СИМ-карты и на руках и в трекерах: {len(sim_in_trackers_and_on_hands)}\n' + '\n'.join(sim_in_trackers_and_on_hands)
         for msg_one in cut_msg_telegram(msg_text):
             bot.send_message(
                 chat_id=msg_chat_id,
@@ -918,8 +919,6 @@ def callback_query(call):
         get_list_date_sim_cards(call.message)
     elif 'get_numbers_id_payer' in call.data:
         get_number_payer_sim_cards(call.message)
-    elif 'get_sim_cards_payers' in call.data:
-        get_list_payer_sim_cards(call.message, id_payer=call.data.split()[1])
 
     elif 'check_numbers' in call.data:
         check_mts_sim_cards(call.message.chat.id)
@@ -956,12 +955,16 @@ def callback_query(call):
     elif 'mts_noblock_exchange_sim' in call.data:
         mts_exchange_no(call.message)
 
+    elif 'payment_choice_id' in call.data:
+        payment_request_payer_id(call.message)
+    elif 'payment_choice_msg' in call.data:
+        payment_request_payer_msg(call.message)
     elif 'payment_change_date' in call.data:
         payment_change_date(call.message, call.data)
-    elif 'payment_choice' in call.data:
-        payment_request_payer(call.message, call.data)
     elif 'payment_custom_date' in call.data:
         payment_request_custom_date(call.message, call.data)
+    elif 'payment_get_sim_cards_payers' in call.data:
+        get_list_payer_sim_cards(call.message, payer_id=call.data.split()[1])
 
 
 @bot.message_handler(content_types=['text'])
