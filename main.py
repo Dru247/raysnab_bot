@@ -110,8 +110,8 @@ def cut_msg_telegram(text_msg):
 
         msgs.append(one_msg)
         return msgs
-    except Exception:
-        logging.critical(msg="func cut_msg_telegram - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def mts_request_number(message):
@@ -119,8 +119,8 @@ def mts_request_number(message):
     try:
         msg = bot.send_message(chat_id=message.chat.id, text="Введи номер сим-карты")
         bot.register_next_step_handler(message=msg, callback=mts_block_info)
-    except Exception:
-        logging.critical(msg="func mts_request_number - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def mts_block_info(message):
@@ -427,8 +427,8 @@ def get_numbers_payer_or_date(message):
             message.from_user.id,
             text='Выбери',
             reply_markup=keyboard)
-    except Exception:
-        logging.error("func get_numbers_payer_or_date - error", exc_info=True)
+    except Exception as err:
+        logging.error(msg='', exc_info=err)
 
 
 def get_number_payer_sim_cards(message):
@@ -436,14 +436,15 @@ def get_number_payer_sim_cards(message):
     try:
         msg = bot.send_message(chat_id=message.chat.id, text="Напиши ID плательщика")
         bot.register_next_step_handler(message=msg, callback=get_list_payer_sim_cards)
-    except Exception:
-        logging.error("func get_payer_sim_cards - error", exc_info=True)
+    except Exception as err:
+        logging.error(msg='', exc_info=err)
 
 
-def get_list_payer_sim_cards(message):
+def get_list_payer_sim_cards(message, id_payer=None):
     """Отправляет сообщение со списком номеров сим-карт по плательщику"""
     try:
-        id_payer = int(message.text)
+        if not id_payer:
+            id_payer = int(message.text)
         sim_cards = api_dj.get_payer_sim_cards(id_payer)
         for sim_list in sim_cards:
             bot.send_message(
@@ -618,7 +619,7 @@ def payment_request_date(message, msg_payer):
         date_now = datetime.date.today()
         now_month_last_day = calendar.monthrange(date_now.year, date_now.month)[1]
         date_target_now_month = date_now.strftime(f'%Y-%m-{now_month_last_day}')
-        date_plus_month = date_now + relativedelta(months=+1)
+        date_plus_month = date_now + relativedelta(months=1)
         date_plus_month_last_day = calendar.monthrange(date_plus_month.year, date_plus_month.month)[1]
         date_target_plus_month  = date_plus_month.strftime(f'%Y-%m-{date_plus_month_last_day}')
         inline_keys = [
@@ -666,7 +667,17 @@ def payment_change_date(message, call_data):
             bot.send_message(message.chat.id, text='Неверный формат даты')
         else:
             api_dj.objects_change_date(payer_id, date_target)
-            bot.send_message(message.chat.id, text='Успех')
+            keyboard = types.InlineKeyboardMarkup()
+            keyboard.add(
+                types.InlineKeyboardButton(
+                    text='Вывести СИМ-карты плательщика',
+                    callback_data=f'get_sim_cards_payers {payer_id}'
+                )
+            )
+            bot.send_message(
+                message.from_user.id,
+                text='Успех',
+                reply_markup=keyboard)
     except Exception as err:
         logging.critical(msg='', exc_info=err)
 
@@ -907,6 +918,8 @@ def callback_query(call):
         get_list_date_sim_cards(call.message)
     elif 'get_numbers_id_payer' in call.data:
         get_number_payer_sim_cards(call.message)
+    elif 'get_sim_cards_payers' in call.data:
+        get_list_payer_sim_cards(call.message, id_payer=call.data.split()[1])
 
     elif 'check_numbers' in call.data:
         check_mts_sim_cards(call.message.chat.id)
