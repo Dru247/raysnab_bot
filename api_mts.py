@@ -441,7 +441,7 @@ def get_exchange_sim_card(number, imsi):
         _, result, _ = result_check_block
         if result:
             response = del_block(number)
-            time.sleep(1)
+            time.sleep(60)
             logging.info(msg=f'result_del_block:{response}')
         response = request_exchange_sim_card(number, imsi)
         logging.info(msg=f'request_exchange_sim_card: {response}')

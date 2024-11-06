@@ -313,9 +313,9 @@ def mts_block_exchange_sim(message, call_data):
         number = call_data.split()[1]
         response = api_mts.add_block(number)
         if response[0]:
-            msg_text = f"\n{number}: {response[1]} - Номер в блокировке"
+            msg_text = f'{number}: Номер в блокировке'
         else:
-            msg_text = f"\n{number}: {response[1]} - {response[2]}"
+            msg_text = f'{number}: {response[1]} - {response[2]}'
         bot.send_message(chat_id=message.chat.id, text=msg_text)
     except Exception as err:
         logging.critical(msg='', exc_info=err)
