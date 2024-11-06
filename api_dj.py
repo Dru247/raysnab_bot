@@ -158,11 +158,11 @@ def get_payer_sim_cards(payer):
 
 
 def get_date_terminals(date):
-    """API запрос на списк терминалов по дате"""
+    """API запрос на список терминалов по дате"""
     try:
         return [row['terminal'] for row in api_request_object_list() if row['date_change_status'] == date and row['terminal']]
-    except Exception:
-        logging.critical(msg="func dj_api.get_date_terminals - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def get_date_sim_cards(date):

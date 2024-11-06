@@ -85,8 +85,8 @@ def check_date(date_target):
     try:
         date_target = datetime.datetime.strptime(date_target, '%Y-%m-%d')
         return isinstance(date_target, datetime.date)
-    except Exception:
-        logging.critical(msg="func check_date - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def cut_msg_telegram(text_msg):
@@ -185,18 +185,19 @@ def mts_add_del_services(message, target_func):
         for number_old in numbers:
             check, number = check_number(number_old)
             if not check:
-                final_list.append((False, number_old, 'Ошибка - Номер некорректен"'))
+                final_list.append((False, number_old, 'Ошибка - Номер некорректен'))
             else:
                 success, response_text = target_func(number)
-                if success:
-                    successfully_requests.append((success, number, response_text))
-                else:
+                if not success:
                     final_list.append((success, number, response_text))
+                # else:
+                #     successfully_requests.append((success, number, response_text))
                 time.sleep(1)
 
         for success, num, event_id_request in successfully_requests:
             success, response_text = api_mts.check_status_request(event_id_request)
             final_list.append((success, num, response_text))
+            time.sleep(1)
 
         final_list.sort(key=lambda a: a[0])
         text_msg = 'Результат запроса:\n'
@@ -270,12 +271,8 @@ def mts_exchange_sim_second(message, number):
                 keyboard = types.InlineKeyboardMarkup()
                 keyboard.add(
                     types.InlineKeyboardButton(
-                        text="Да",
-                        callback_data=f"mts_yes_exchange_sim {number};{imsi}"
-                    ),
-                    types.InlineKeyboardButton(
-                        text="Нет",
-                        callback_data=f"mts_no_exchange_sim {number};{imsi}"
+                        text='Да',
+                        callback_data=f'mts_yes_exchange_sim {number};{imsi}'
                     )
                 )
                 bot.send_message(
@@ -284,38 +281,34 @@ def mts_exchange_sim_second(message, number):
                     reply_markup=keyboard
                 )
             else:
-                bot.send_message(chat_id=message.chat.id, text=f"{text}")
+                bot.send_message(chat_id=message.chat.id, text=f'{text}')
     except Exception as err:
         logging.critical(msg='', exc_info=err)
 
 
 def mts_yes_exchange_sim(message, call_data):
+    """Отправляет номер на замену сим-карты, спрашивает про дальнейшую блокировку"""
     try:
-        number, imsi = call_data.split()[1].split(";")
-        _, result, _ = api_mts.get_block_info(number)
-        if result:
-            api_mts.del_block(number)
-        result, text = api_mts.get_exchange_sim_card(number, imsi)
+        number, imsi = call_data.split()[1].split(';')
+        api_mts.get_exchange_sim_card(number, imsi)
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(
             types.InlineKeyboardButton(
-                text="Да",
-                callback_data=f"mts_block_exchange_sim {number}"
-            ),
-            types.InlineKeyboardButton(
-                text="Нет",
-                callback_data=f"mts_noblock_exchange_sim {number}"
+                text='Да',
+                callback_data=f'mts_block_exchange_sim {number}'
             )
         )
         bot.send_message(
             chat_id=message.chat.id,
-            text=f"{result} - {text}.\nПодключаем Добровольную блокировку?",
-            reply_markup=keyboard)
-    except Exception:
-        logging.critical(msg="func mts_yes_exchange_sim - error", exc_info=True)
+            text=f'Подключаем Добровольную блокировку?',
+            reply_markup=keyboard
+        )
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def mts_block_exchange_sim(message, call_data):
+    """"""
     try:
         number = call_data.split()[1]
         response = api_mts.add_block(number)
@@ -324,15 +317,8 @@ def mts_block_exchange_sim(message, call_data):
         else:
             msg_text = f"\n{number}: {response[1]} - {response[2]}"
         bot.send_message(chat_id=message.chat.id, text=msg_text)
-    except Exception:
-        logging.critical(msg="func mts_block_exchange_sim - error", exc_info=True)
-
-
-def mts_exchange_no(message):
-    try:
-        bot.send_message(chat_id=message.chat.id, text="Есть отмена")
-    except Exception:
-        logging.critical(msg="func mts_exchange_sim_second - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def mts_get_account_balance():
@@ -350,8 +336,8 @@ def mts_get_account_balance():
             difference = float(result) - old_balance
             msg_text = f"МТС Баланс: {round(result, 2)} ({round(difference, 2)})"
         bot.send_message(chat_id=configs.telegram_my_id, text=msg_text)
-    except Exception:
-        logging.critical(msg="func mts_get_account_balance - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def mts_check_num_balance(msg_chat_id=None, critical=False):
@@ -393,7 +379,7 @@ def mts_check_num_balance(msg_chat_id=None, critical=False):
         )
 
 
-def check_email(imap_server=configs.imap_server_yandex, email_login=configs.ya_mary_email_login, email_password=configs.ya_mary_email_password, teleg_id=configs.id_telegram_mary):
+def check_email(imap_server=configs.imap_server_yandex, email_login=configs.ya_mary_email_login, email_password=configs.ya_mary_email_password, telegram_id=configs.id_telegram_mary):
     try:
         mailbox = imaplib.IMAP4_SSL(imap_server)
         mailbox.login(email_login, email_password)
@@ -403,7 +389,7 @@ def check_email(imap_server=configs.imap_server_yandex, email_login=configs.ya_m
         logging.info(msg=f"{email_login}: {id_unseen_msgs}")
         if id_unseen_msgs:
             bot.send_message(
-                teleg_id,
+                telegram_id,
                 text=f"На почте {email_login} есть непрочитанные письма, в кол-ве {len(id_unseen_msgs)} шт."
             )
     except Exception as err:
@@ -489,8 +475,8 @@ def get_list_vacant_sim_cards(message):
                 chat_id=message.chat.id,
                 text=msg
             )
-    except Exception:
-        logging.critical(msg="func get_list_vacant_sim_cards - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def check_mts_sim_cards(msg_chat_id):
@@ -508,8 +494,8 @@ def check_mts_sim_cards(msg_chat_id):
                 chat_id=msg_chat_id,
                 text=msg
             )
-    except Exception:
-        logging.critical(msg="func check_mts_sim_cards - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def check_active_mts_sim_cards(msg_chat_id, morning=False):
@@ -603,7 +589,7 @@ def payment_request_payer_msg_handler(message):
             else:
                 bot.send_message(chat_id=message.chat.id, text=f'Telegram ID: {tele_id_payer}')
             payment_request_date(message, payer_id)
-        except AttributeError as err:
+        except AttributeError as _:
             bot.send_message(chat_id=message.chat.id, text=f'ID пользователя скрыт')
             payment_request_payer_id(message)
 
@@ -948,12 +934,8 @@ def callback_query(call):
         mts_exchange_sim_input_number(call.message)
     elif 'mts_yes_exchange_sim' in call.data:
         mts_yes_exchange_sim(call.message, call.data)
-    elif 'mts_no_exchange_sim' in call.data:
-        mts_exchange_no(call.message)
     elif 'mts_block_exchange_sim' in call.data:
         mts_block_exchange_sim(call.message, call.data)
-    elif 'mts_noblock_exchange_sim' in call.data:
-        mts_exchange_no(call.message)
 
     elif 'payment_choice_id' in call.data:
         payment_request_payer_id(call.message)

@@ -1,3 +1,5 @@
+from time import sleep
+
 import configs
 import datetime
 import logging
@@ -111,8 +113,8 @@ def check_status_request(event_id):
                 f"{check_text};{count_attempts}"
             )
         return success, text
-    except Exception:
-        logging.critical(msg="func check_status_request - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def request_balance(account):
@@ -212,12 +214,12 @@ def add_block(number):
 def del_block(number):
     """Удаление блокировки на номере"""
     try:
-        service_id = "BL0005"
-        action = "delete"
+        service_id = 'BL0005'
+        action = 'delete'
         success, result_text = change_service_handler(number, service_id, action)
         return success, result_text
-    except Exception:
-        logging.critical(msg="func del_block - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def change_service_later_request(number, service_id, action, dt_action):
@@ -412,7 +414,7 @@ def get_vacant_sim_card_exchange(number, last_icc_id):
 def request_exchange_sim_card(number, imsi):
     try:
         token = get_token()
-        url = "https://api.mts.ru/b2b/v1/Resources/ChangeSIMCard"
+        url = 'https://api.mts.ru/b2b/v1/Resources/ChangeSIMCard'
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -424,43 +426,50 @@ def request_exchange_sim_card(number, imsi):
             headers=headers,
             json=js_data
         )
-        response = response.text
-        logging.info(f"request_exchange_sim_card - response: {response}")
-        return response
-    except Exception:
-        logging.critical(msg="func request_exchange_sim_card - error", exc_info=True)
+        return response.text
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def get_exchange_sim_card(number, imsi):
+    """Проверяет наличие блокировки, заменять сим-карту на номере"""
     try:
-        result_var = ["Ошибка", "Успех"]
-        event_id = request_exchange_sim_card(number, imsi)
-        logging.info(msg=f"func get_exchange_sim_card - event_id: {event_id}, {type(event_id)}")
-        # result, text = check_status_request(event_id)
-        result, text = result_var[1], "OK"
-        return result, text
-    except Exception:
-        logging.critical(msg="func get_exchange_sim_card - error", exc_info=True)
+
+        result_check_block = get_block_info(number)
+        time,sleep(1)
+        logging.info(msg=f'result_check_block:{result_check_block}')
+        _, result, _ = result_check_block
+        if result:
+            response = del_block(number)
+            time.sleep(1)
+            logging.info(msg=f'result_del_block:{response}')
+        response = request_exchange_sim_card(number, imsi)
+        logging.info(msg=f'request_exchange_sim_card: {response}')
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
-#нужно поправить
 def get_block_info(number):
+    """"""
     try:
-        service_id = "BL0005"
-        error, result, text = 0, 0, str()
+        service_id = 'BL0005'
+        error, result, text = False, False, str()
         response = api_request_number_services(number)
         if response:
-            if "fault" in response:
-                error, text = 1, "Неверный запрос"
+            if 'fault' in response:
+                error, text = True, 'Неверный запрос'
+                logging.warning(msg=f'number:{number}, response:{response}')
             else:
                 for service in response:
                     if service.get("externalID") == service_id:
                         date_block = service.get("validFor").get("startDateTime")[:10]
-                        result, text = 1, date_block
+                        result, text = True, date_block
                         break
+        else:
+            logging.warning(msg=f'number:{number}, response:{response}')
         return error, result, text
-    except Exception:
-        logging.critical(msg="func get_block_info - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def request_balance_numbers(numbers):
@@ -486,21 +495,21 @@ def request_balance_numbers(numbers):
 def get_balance_numbers(crit_balance=0):
     """Возвращает список (Номер, баланс) с возможности отфильтровки"""
     try:
-        iccs_numbers = get_list_numbers()
+        icc_numbers = get_list_numbers()
         num_balances = list()
 
-        while len(iccs_numbers) > 1000:
-            response_result = request_balance_numbers([num[1] for num in iccs_numbers[:1000]])
+        while len(icc_numbers) > 1000:
+            response_result = request_balance_numbers([num[1] for num in icc_numbers[:1000]])
             for record in response_result:
                 if record.get("remainedAmount"):
                     if record["remainedAmount"]["amount"] > crit_balance:
                         num_balances.append((record["id"], record["remainedAmount"]["amount"]))
-            iccs_numbers = iccs_numbers[1000:]
+            icc_numbers = icc_numbers[1000:]
             time.sleep(1)
 
         return num_balances
-    except Exception:
-        logging.critical(msg="func get_balance_numbers - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def get_all_active_sim_cards():
