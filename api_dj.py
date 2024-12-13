@@ -1,6 +1,5 @@
-from datetime import datetime
-
 import configs
+import datetime
 import logging
 import requests
 
@@ -233,10 +232,10 @@ def get_human_for_from_teleg_id(teleg_id):
 def get_all_active_sim_cards():
     """Возвращает все активные сим-карты МТС"""
     try:
-        date_now = datetime.today()
+        date_now = datetime.datetime.today()
         id_terminals = [
             row['terminal'] for row in api_request_object_list()
-            if datetime.fromisoformat(row['date_change_status']) > date_now
+            if datetime.datetime.fromisoformat(row['date_change_status']) > date_now
             and row['terminal']
         ]
         mts_id = 2
@@ -254,11 +253,11 @@ def get_all_active_sim_cards():
 def get_first_number_for_change():
     """Возвращает номер МТС для замены"""
     try:
-        date_now = datetime.today()
+        date_now = datetime.datetime.today()
         id_terminals_and_dates = {
             row['terminal']: row['date_change_status']
             for row in api_request_object_list()
-            if datetime.fromisoformat(row['date_change_status']) < date_now
+            if datetime.datetime.fromisoformat(row['date_change_status']) < date_now
             and row['terminal']
             and not row['active']
         }
@@ -312,5 +311,32 @@ def check_sim_cards_in_dj():
             sim['icc'] for sim in request_all_sim_cards if sim['id'] not in id_sim_everywhere
         }
         return sim_in_trackers_and_on_hands, sim_not_everywhere
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def api_request_schedule():
+    """Запрос графика"""
+    try:
+        url = 'http://89.169.136.83/api/v1/schedule/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def get_api_schedule_man():
+    try:
+        maks = 673
+        date_now = datetime.date.today()
+        for schedule_date in api_request_schedule():
+            if datetime.date.fromisoformat(schedule_date.get('date')) == date_now:
+                if schedule_date.get('human') == maks:
+                    return 'Макс'
+                return 'Аня'
     except Exception as err:
         logging.critical(msg='', exc_info=err)

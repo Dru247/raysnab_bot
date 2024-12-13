@@ -36,7 +36,8 @@ commands = [
     'Список болванок МТС',
     'Список СИМ-карт',
     'Оплата',
-    'Проверки'
+    'Проверки',
+    'Чья смена'
 ]
 keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
 keyboard_main.add(*[types.KeyboardButton(comm) for comm in commands])
@@ -772,6 +773,17 @@ def check_sim_cards_in_dj(msg_chat_id):
         logging.critical(msg='', exc_info=err)
 
 
+def get_schedule_work():
+    try:
+        schedule_man = api_dj.get_api_schedule_man()
+        bot.send_message(
+            chat_id=configs.telegram_my_id,
+            text=f'Сегодня дежурит {schedule_man}'
+        )
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
 def checks(message):
     """Выдаёт список проверок"""
     try:
@@ -837,6 +849,7 @@ def morning_check():
     """
     try:
         logging.info(msg='Start main:morning_check()')
+        get_schedule_work()
         mts_get_account_balance()
         check_sim_cards_in_dj(msg_chat_id=configs.telegram_job_id)
         mts_check_num_balance(msg_chat_id=configs.telegram_my_id)
@@ -968,6 +981,8 @@ def take_text(message):
             payment_request_data_payer(message)
         elif message.text.lower() == commands[7].lower():
             checks(message)
+        elif message.text.lower() == commands[8].lower():
+            get_schedule_work()
         else:
             logging.warning(f'func take_text: not understand question: {message.text}')
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')
