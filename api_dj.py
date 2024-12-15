@@ -7,6 +7,48 @@ import requests
 drf_token = configs.token_drf
 
 
+def api_request_humans():
+    """Запрос списка людей"""
+    try:
+        url = 'http://89.169.136.83/api/v1/humans/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def api_request_human_contacts():
+    """Запрос списка контактов людей"""
+    try:
+        url = 'http://89.169.136.83/api/v1/human-contacts/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def api_request_human_names():
+    """Запрос списка имён людей"""
+    try:
+        url = 'http://89.169.136.83/api/v1/human-names/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
 def api_request_human_term_list():
     """Запрос списка терминалов на руках"""
     try:
@@ -49,7 +91,7 @@ def api_request_installations_list():
 
 
 def api_request_object_list():
-    """Запрос списка пользователей на серверах"""
+    """Запрос списка объектов"""
     try:
         url = 'http://89.169.136.83/api/v1/objects/'
         headers = {"Authorization": f"Token {drf_token}"}
@@ -78,6 +120,20 @@ def api_request_object_change_date(obj_id, date_target):
         return response
     except Exception:
         logging.critical(msg="func api_dj.api_request_object_change_date - error", exc_info=True)
+
+
+def api_request_schedule():
+    """Запрос графика"""
+    try:
+        url = 'http://89.169.136.83/api/v1/schedule/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def api_request_sim_list():
@@ -117,8 +173,8 @@ def api_request_user_list():
             headers=headers
         ).json()
         return response
-    except Exception:
-        logging.critical(msg="func dj_api.api_request_user_list - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def get_list_sim_cards():
@@ -203,20 +259,6 @@ def objects_change_date(payer_id, date_target):
             api_request_object_change_date(obj_id, date_target)
     except Exception as err:
         logging.critical(msg='', exc_info=err)
-
-
-def api_request_human_contacts():
-    """Запрос списка контактов людей"""
-    try:
-        url = 'http://89.169.136.83/api/v1/human-contacts/'
-        headers = {"Authorization": f"Token {drf_token}"}
-        response = requests.get(
-            url=url,
-            headers=headers
-        ).json()
-        return response
-    except Exception:
-        logging.critical(msg="func api_dj.api_request_human_contacts - error", exc_info=True)
 
 
 def get_human_for_from_teleg_id(teleg_id):
@@ -315,28 +357,31 @@ def check_sim_cards_in_dj():
         logging.critical(msg='', exc_info=err)
 
 
-def api_request_schedule():
-    """Запрос графика"""
+def get_api_schedule_man(date_target):
+    """Возвращает имя и фамилию человека, чья смена по дате в графике"""
     try:
-        url = 'http://89.169.136.83/api/v1/schedule/'
-        headers = {"Authorization": f"Token {drf_token}"}
-        response = requests.get(
-            url=url,
-            headers=headers
-        ).json()
-        return response
-    except Exception as err:
-        logging.critical(msg='', exc_info=err)
-
-
-def get_api_schedule_man():
-    try:
-        maks = 673
-        date_now = datetime.date.today()
+        human_id = int()
         for schedule_date in api_request_schedule():
-            if datetime.date.fromisoformat(schedule_date.get('date')) == date_now:
-                if schedule_date.get('human') == maks:
-                    return 'Макс'
-                return 'Аня'
+            if datetime.date.fromisoformat(schedule_date.get('date')) == date_target:
+                human_id = schedule_date.get('human')
+                break
+        if not human_id:
+            return 'Дежурный не назначен'
+        humans = api_request_humans()
+        name_id = int()
+        last_name = str()
+        for human in humans:
+            if human.get('id') == human_id:
+                last_name = human.get('last_name')
+                name_id = human.get('name_id')
+                break
+        names = api_request_human_names()
+        name = str()
+        for name in names:
+            if name.get('id') == name_id:
+                name = name.get('name')
+                break
+        return f'{name} {last_name}'
+
     except Exception as err:
         logging.critical(msg='', exc_info=err)

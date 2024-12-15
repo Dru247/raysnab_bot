@@ -37,7 +37,7 @@ commands = [
     'Список СИМ-карт',
     'Оплата',
     'Проверки',
-    'Чья смена'
+    'Чья смена?'
 ]
 keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
 keyboard_main.add(*[types.KeyboardButton(comm) for comm in commands])
@@ -773,12 +773,45 @@ def check_sim_cards_in_dj(msg_chat_id):
         logging.critical(msg='', exc_info=err)
 
 
-def get_schedule_work():
+def schedule_request_date(message):
+    """Запрос даты для вывода человека по графику"""
     try:
-        schedule_man = api_dj.get_api_schedule_man()
+        inline_keys = [
+            types.InlineKeyboardButton(
+                text='Сегодня',
+                callback_data=f'schedule today'
+            ),
+            types.InlineKeyboardButton(
+                text='Завтра',
+                callback_data=f'schedule tomorrow'
+            )
+            # types.InlineKeyboardButton(
+            #     text='Произвольная дата',
+            #     callback_data=''
+            # )
+        ]
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(*inline_keys, row_width=2)
         bot.send_message(
-            chat_id=configs.telegram_my_id,
-            text=f'Сегодня дежурит {schedule_man}'
+            message.chat.id,
+            text='Когда?',
+            reply_markup=keyboard)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def schedule_get_human(message, call_data):
+    """Выводит человека чья дата смены"""
+    try:
+        if 'tomorrow' in call_data:
+            date_target = datetime.datetime.today() + datetime.timedelta(days=1)
+            date_target = date_target.date()
+        else:
+            date_target = datetime.date.today()
+        schedule_man = api_dj.get_api_schedule_man(date_target)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=f'{date_target} дежурит {schedule_man}'
         )
     except Exception as err:
         logging.critical(msg='', exc_info=err)
@@ -849,7 +882,6 @@ def morning_check():
     """
     try:
         logging.info(msg='Start main:morning_check()')
-        get_schedule_work()
         mts_get_account_balance()
         check_sim_cards_in_dj(msg_chat_id=configs.telegram_job_id)
         mts_check_num_balance(msg_chat_id=configs.telegram_my_id)
@@ -961,6 +993,9 @@ def callback_query(call):
     elif 'payment_get_sim_cards_payers' in call.data:
         get_list_payer_sim_cards(call.message, payer_id=call.data.split()[1])
 
+    elif 'schedule' in call.data:
+        schedule_get_human(call.message, call.data)
+
 
 @bot.message_handler(content_types=['text'])
 def take_text(message):
@@ -982,7 +1017,7 @@ def take_text(message):
         elif message.text.lower() == commands[7].lower():
             checks(message)
         elif message.text.lower() == commands[8].lower():
-            get_schedule_work()
+            schedule_request_date(message)
         else:
             logging.warning(f'func take_text: not understand question: {message.text}')
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')
