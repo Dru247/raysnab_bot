@@ -341,7 +341,7 @@ def mts_get_account_balance():
         logging.critical(msg='', exc_info=err)
 
 
-def mts_check_num_balance(msg_chat_id=None, critical=False):
+def mts_check_num_balance(critical=False):
     """Проверяет номера МТС на КРИТИЧЕСКИЙ перерасход и отправляет сотрудникам в чат"""
     try:
         if critical:
@@ -364,13 +364,12 @@ def mts_check_num_balance(msg_chat_id=None, critical=False):
                     cur.execute('SELECT data FROM contacts WHERE contact_type = 3')
                     result = cur.fetchall()
                     chats = [chat[0] for chat in result]
-                for chat in chats:
-                    for msg in msgs:
-                        bot.send_message(chat_id=chat, text=msg)
             else:
+                chats = [configs.telegram_my_id, ]
+            for chat in chats:
                 for msg in msgs:
-                    bot.send_message(chat_id=msg_chat_id, text=msg)
-                bot.send_message(chat_id=msg_chat_id, text=f'Общий перерасход: {overspending}')
+                    bot.send_message(chat_id=chat, text=msg)
+            bot.send_message(chat_id=configs.telegram_my_id, text=f'Общий перерасход: {overspending}')
 
     except Exception as err:
         logging.critical(msg='', exc_info=err)
@@ -884,7 +883,7 @@ def morning_check():
         logging.info(msg='Start main:morning_check()')
         mts_get_account_balance()
         check_sim_cards_in_dj(msg_chat_id=configs.telegram_job_id)
-        mts_check_num_balance(msg_chat_id=configs.telegram_my_id)
+        mts_check_num_balance()
         check_mts_sim_cards(msg_chat_id=configs.telegram_job_id)
         check_diff_terminals(msg_chat_id=configs.telegram_job_id)
         check_glonasssoft_dj_objects(msg_chat_id=configs.telegram_job_id)
