@@ -365,7 +365,7 @@ def mts_check_num_balance(critical=False):
                     result = cur.fetchall()
                     chats = [chat[0] for chat in result]
             else:
-                chats = [configs.telegram_my_id, ]
+                chats = [configs.telegram_my_id, configs.telegram_sister_id]
             for chat in chats:
                 for msg in msgs:
                     bot.send_message(chat_id=chat, text=msg)
