@@ -37,11 +37,17 @@ commands = [
     'Список СИМ-карт',
     'Оплата',
     'Проверки',
-    'Чья смена?'
+    'Чья смена?',
+    'Запас'
 ]
+install_commands = [commands[9]]
 keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
 keyboard_main.add(*[types.KeyboardButton(comm) for comm in commands])
 
+keyboard_install = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+keyboard_install.add(*[types.KeyboardButton(comm) for comm in install_commands])
+
+install_telegram_id = [int(configs.telegram_malashin_id), int(configs.telegram_sumbulov_id)]
 
 def check_user(message):
     """Проверяет пользователя на право выполнения команд"""
@@ -582,12 +588,12 @@ def payment_request_payer_msg_handler(message):
     """Обрабатывает сообщение плательщика"""
     try:
         try:
-            tele_id_payer = message.forward_from.id
-            payer_id = api_dj.get_human_for_from_teleg_id(tele_id_payer)
+            telegram_id_payer = message.forward_from.id
+            payer_id = api_dj.get_id_human_for_from_telegram_id(telegram_id_payer)
             if not payer_id:
-                bot.send_message(chat_id=message.chat.id, text=f'{tele_id_payer} - не зарегистрирован')
+                bot.send_message(chat_id=message.chat.id, text=f'{telegram_id_payer} - не зарегистрирован')
             else:
-                bot.send_message(chat_id=message.chat.id, text=f'Telegram ID: {tele_id_payer}')
+                bot.send_message(chat_id=message.chat.id, text=f'Telegram ID: {telegram_id_payer}')
             payment_request_date(message, payer_id)
         except AttributeError as _:
             bot.send_message(chat_id=message.chat.id, text=f'ID пользователя скрыт')
@@ -822,35 +828,35 @@ def checks(message):
         inline_keys = [
             types.InlineKeyboardButton(
                 text='Проверка СИМ-карт на проекте',
-                callback_data=f'check_sim_cards_in_dj'
+                callback_data='check_sim_cards_in_dj'
             ),
             types.InlineKeyboardButton(
                 text='Проверка номеров',
-                callback_data=f'check_numbers'
+                callback_data='check_numbers'
             ),
             types.InlineKeyboardButton(
                 text='Проверка перерасхода СИМ-карт',
-                callback_data=f'check_overspend_sim_cards'
+                callback_data='check_overspend_sim_cards'
             ),
             types.InlineKeyboardButton(
                 text='Проверка блокировок СИМ-карт',
-                callback_data=f'check_active_sim_cards'
+                callback_data='check_active_sim_cards'
             ),
             types.InlineKeyboardButton(
                 text='Проверка объектов GLONASSsoft',
-                callback_data=f'check_glonasssoft'
+                callback_data='check_glonasssoft'
             ),
             types.InlineKeyboardButton(
                 text='Потерянные трекеры',
-                callback_data=f'check_lost_trackers'
+                callback_data='check_lost_trackers'
             ),
             types.InlineKeyboardButton(
                 text='Загрузить МЕГАФОН',
-                callback_data=f'check_upload_mega_exel'
+                callback_data='check_upload_mega_exel'
             ),
             types.InlineKeyboardButton(
                 text='Загрузить СИМ2М',
-                callback_data=f'check_upload_sim2m_exel'
+                callback_data='check_upload_sim2m_exel'
             )
         ]
         keyboard = types.InlineKeyboardMarkup()
@@ -866,7 +872,78 @@ def checks(message):
         bot.send_message(
             chat_id=message.chat.id,
             text=msg_text,
-            reply_markup=keyboard)
+            reply_markup=keyboard
+        )
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def get_stock(message):
+    """"""
+    try:
+        telegram_id = message.chat.id
+        if telegram_id in install_telegram_id:
+            inline_keys = [
+                types.InlineKeyboardButton(
+                    text='Кол-во',
+                    callback_data=f'get_stock {telegram_id}'
+                ),
+                types.InlineKeyboardButton(
+                    text='Детально',
+                    callback_data=f'get_stock {telegram_id} details'
+                )
+            ]
+            text_msg = 'Как вывести?'
+        else:
+            inline_keys = [
+                types.InlineKeyboardButton(
+                    text='Малашин А.',
+                    callback_data=f'get_stock {configs.telegram_malashin_id}'
+                ),
+                types.InlineKeyboardButton(
+                    text='Сумбулов А.',
+                    callback_data=f'get_stock {configs.telegram_sumbulov_id}'
+                ),
+                types.InlineKeyboardButton(
+                    text='Мерзляков М.',
+                    callback_data=f'get_stock {configs.telegram_maks_id}'
+                ),
+                types.InlineKeyboardButton(
+                    text='Лехтин А.',
+                    callback_data=f'get_stock {configs.telegram_my_id}'
+                )
+            ]
+            text_msg = 'Чей запас вывести?'
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(*inline_keys, row_width=2)
+        bot.send_message(
+            chat_id=telegram_id,
+            text=text_msg,
+            reply_markup=keyboard
+        )
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def get_stock_handler(message, call_data):
+    """Выводит кол-во и список оборудования на руках"""
+    try:
+        target_telegram_id = call_data.split()[1]
+        result = api_dj.get_stock(target_telegram_id)
+        if 'details' in call_data:
+            text_result_list = list()
+            for key, value in result.items():
+                text_result_list.append(key)
+                for imei, serial in value:
+                    text_result_list.append(f'{imei} {serial}')
+            text_msg='\n'.join(text_result_list)
+        else:
+            result_len = [f'{key} - {len(value)} шт.' for key, value in result.items()]
+            text_msg = '\n'.join(result_len)
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=text_msg
+        )
     except Exception as err:
         logging.critical(msg='', exc_info=err)
 
@@ -939,6 +1016,12 @@ def help_message(message):
             text=text,
             reply_markup=keyboard_main
         )
+    elif message.chat.id in install_telegram_id:
+        bot.send_message(
+            message.chat.id,
+            text='Лови клавиатуру',
+            reply_markup=keyboard_install
+        )
     else:
         bot.send_message(chat_id=message.chat.id, text='В другой раз')
 
@@ -950,10 +1033,13 @@ def callback_query(call):
     elif 'get_numbers_id_payer' in call.data:
         get_number_payer_sim_cards(call.message)
 
+    elif 'get_stock' in call.data:
+        get_stock_handler(call.message, call.data)
+
     elif 'check_numbers' in call.data:
         check_mts_sim_cards(call.message.chat.id)
     elif 'check_overspend_sim_cards' in call.data:
-        mts_check_num_balance(msg_chat_id=call.message.chat.id)
+        mts_check_num_balance()
     elif 'check_active_sim_cards' in call.data:
         check_active_mts_sim_cards(call.message.chat.id)
     elif 'check_glonasssoft' in call.data:
@@ -996,9 +1082,10 @@ def callback_query(call):
         schedule_get_human(call.message, call.data)
 
 
+
 @bot.message_handler(content_types=['text'])
 def take_text(message):
-    if check_user(message):
+    if check_user(message) or message.chat.id in install_telegram_id:
         if message.text.lower() == commands[0].lower():
             mts_request_number(message)
         elif message.text.lower() == commands[1].lower():
@@ -1017,6 +1104,8 @@ def take_text(message):
             checks(message)
         elif message.text.lower() == commands[8].lower():
             schedule_request_date(message)
+        elif message.text.lower() == commands[9].lower():
+            get_stock(message)
         else:
             logging.warning(f'func take_text: not understand question: {message.text}')
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')

@@ -49,8 +49,8 @@ def api_request_human_names():
         logging.critical(msg='', exc_info=err)
 
 
-def api_request_human_term_list():
-    """Запрос списка терминалов на руках"""
+def api_request_human_tracker_list():
+    """Запрос списка трекеров на руках"""
     try:
         url = 'http://89.169.136.83/api/v1/human-terminals/'
         headers = {"Authorization": f"Token {drf_token}"}
@@ -136,6 +136,20 @@ def api_request_schedule():
         logging.critical(msg='', exc_info=err)
 
 
+def api_request_tracker_models():
+    """Запрос списка моделей трекеров"""
+    try:
+        url = 'http://89.169.136.83/api/v1/tracker-models/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
 def api_request_sim_list():
     """Запрос списка сим-карт"""
     try:
@@ -145,8 +159,8 @@ def api_request_sim_list():
             headers=headers
         ).json()
         return response
-    except Exception:
-        logging.critical(msg="func dj_api.api_request_sim_list - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def api_request_terminal_list():
@@ -159,8 +173,8 @@ def api_request_terminal_list():
             headers=headers
         ).json()
         return response
-    except Exception:
-        logging.critical(msg="func dj_api.api_request_terminal_list - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def api_request_user_list():
@@ -261,14 +275,14 @@ def objects_change_date(payer_id, date_target):
         logging.critical(msg='', exc_info=err)
 
 
-def get_human_for_from_teleg_id(teleg_id):
+def get_id_human_for_from_telegram_id(telegram_id):
     """Поиск ID человека по ID Telegram"""
     try:
         for contacts in api_request_human_contacts():
-            if contacts['contact_rec'] == str(teleg_id):
+            if contacts['contact_rec'] == str(telegram_id):
                 return contacts['human']
-    except Exception:
-        logging.critical(msg="func api_dj.objects_change_date - error", exc_info=True)
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
 
 
 def get_all_active_sim_cards():
@@ -320,7 +334,7 @@ def get_first_number_for_change():
 def get_diff_terminals():
     """Возвращает разницу терминалов"""
     try:
-        id_term_on_hands = {term['terminal'] for term in api_request_human_term_list()}
+        id_term_on_hands = {term['terminal'] for term in api_request_human_tracker_list()}
         id_term_in_install = {term['terminal'] for term in api_request_installations_list()}
         union_trackers = id_term_on_hands | id_term_in_install
         diff_trackers_all_vs_install_and_on_hands = {
@@ -383,5 +397,20 @@ def get_api_schedule_man(date_target):
                 break
         return f'{name} {last_name}'
 
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def get_stock(telegram_id):
+    """Возвращает словарь моделей со списком трекеров"""
+    try:
+        human_id = get_id_human_for_from_telegram_id(telegram_id)
+        tracker_id_list = [row.get('terminal') for row in api_request_human_tracker_list() if row.get('human') == human_id]
+        trackers = dict()
+        tracker_models = {row.get('id'): row.get('model') for row in api_request_tracker_models()}
+        for row in api_request_terminal_list():
+            if row.get('id') in tracker_id_list:
+                trackers.setdefault(tracker_models.get(row.get('model')),[]).append((row.get('imei'), row.get('serial_number')))
+        return trackers
     except Exception as err:
         logging.critical(msg='', exc_info=err)
