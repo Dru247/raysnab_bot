@@ -334,20 +334,20 @@ def get_first_number_for_change():
 def get_diff_terminals():
     """Возвращает разницу терминалов"""
     try:
-        id_term_on_hands = {term['terminal'] for term in api_request_human_tracker_list()}
-        id_term_in_install = {term['terminal'] for term in api_request_installations_list()}
-        union_trackers = id_term_on_hands | id_term_in_install
-        diff_trackers_all_vs_install_and_on_hands = {
-            term['imei'] for term in api_request_terminal_list()
-            if term['id'] not in union_trackers
-        }
+        all_trackers = api_request_terminal_list()
+        id_trackers_on_hands = {term['terminal'] for term in api_request_human_tracker_list()}
         id_trackers_in_obj = {obj['terminal'] for obj in api_request_object_list()}
-        intersection_trackers = id_term_on_hands & id_trackers_in_obj
-        diff_trackers_on_hands_and_obj = {
-            term['imei'] for term in api_request_terminal_list()
-            if term['id'] in intersection_trackers
+        union_trackers = id_trackers_on_hands | id_trackers_in_obj
+        diff_trackers_all_vs_install_and_on_hands = {
+            tracker['imei'] for tracker in all_trackers
+            if tracker['id'] not in union_trackers
         }
-        return diff_trackers_all_vs_install_and_on_hands, diff_trackers_on_hands_and_obj
+        intersection_trackers = id_trackers_on_hands & id_trackers_in_obj
+        diff_trackers_on_hands_and_in_obj = {
+            tracker['imei'] for tracker in all_trackers
+            if tracker['id'] in intersection_trackers
+        }
+        return diff_trackers_all_vs_install_and_on_hands, diff_trackers_on_hands_and_in_obj
     except Exception as err:
         logging.critical(msg='', exc_info=err)
 

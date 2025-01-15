@@ -739,10 +739,10 @@ def upload_sim2m_exel(message):
 
 
 def check_diff_terminals(msg_chat_id):
-    """Возвращает список потерянных терминалов"""
+    """Возвращает проверку трекеров"""
     try:
         diff_trackers_all_vs_install_and_on_hands, diff_trackers_on_hands_and_obj = api_dj.get_diff_terminals()
-        msg_text = 'Потерянные трекеры:\n' + '\n'.join(diff_trackers_all_vs_install_and_on_hands)
+        msg_text = 'Трекеры без объектов и не на руках:\n' + '\n'.join(diff_trackers_all_vs_install_and_on_hands)
         for msg_one in cut_msg_telegram(msg_text):
             bot.send_message(
                 chat_id=msg_chat_id,
