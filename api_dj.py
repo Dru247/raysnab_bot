@@ -340,7 +340,7 @@ def get_diff_terminals():
         union_trackers = id_trackers_on_hands | id_trackers_in_obj
         diff_trackers_all_vs_install_and_on_hands = {
             tracker['imei'] for tracker in all_trackers
-            if tracker['id'] not in union_trackers
+            if tracker['id'] not in union_trackers and tracker['active']
         }
         intersection_trackers = id_trackers_on_hands & id_trackers_in_obj
         diff_trackers_on_hands_and_in_obj = {
