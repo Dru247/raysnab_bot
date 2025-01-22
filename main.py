@@ -987,8 +987,8 @@ def schedule_main():
         logging.error(msg='', exc_info=err)
 
 
-@bot.business_message_handler(func=lambda message: True, content_types=['photo'])
-def handle_business_message(message):
+@bot.message_handler(content_types=['photo'], func=lambda message: message.chat.type in ['group', 'supergroup'])
+def handle_group_photo(message):
     file_info = bot.get_file(message.photo[-1].file_id)
     downloaded_file = Image.open(BytesIO(bot.download_file(file_info.file_path)))
     decoded = decode(downloaded_file)
@@ -1125,8 +1125,6 @@ def take_text(message):
         else:
             logging.warning(f'func take_text: not understand question: {message.text}')
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')
-    else:
-        bot.send_message(chat_id=message.chat.id, text="В другой раз")
 
 
 if __name__ == '__main__':
