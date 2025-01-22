@@ -14,7 +14,9 @@ import threading
 
 from dateutil.relativedelta import relativedelta
 from io import BytesIO
+from PIL import Image
 from pytz import timezone
+from pyzbar.pyzbar import decode
 from telebot import TeleBot, types
 
 
@@ -983,6 +985,20 @@ def schedule_main():
 
     except Exception as err:
         logging.error(msg='', exc_info=err)
+
+
+@bot.business_message_handler(func=lambda message: True, content_types=['photo'])
+def handle_business_message(message):
+    file_info = bot.get_file(message.photo[-1].file_id)
+    downloaded_file = Image.open(BytesIO(bot.download_file(file_info.file_path)))
+    decoded = decode(downloaded_file)
+    result = [code.data.decode("utf-8") for code in decoded]
+    if result:
+        bot.send_message(
+            message.chat.id,
+            text='\n'.join(result),
+            business_connection_id=message.business_connection_id
+        )
 
 
 @bot.message_handler(commands=['start'])
