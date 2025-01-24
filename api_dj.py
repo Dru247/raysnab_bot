@@ -122,6 +122,20 @@ def api_request_object_change_date(obj_id, date_target):
         logging.critical(msg="func api_dj.api_request_object_change_date - error", exc_info=True)
 
 
+def api_request_price_logistic():
+    """Запрос прайса на выезды"""
+    try:
+        url = f'http://89.169.136.83/api/v1/price-logistics/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
 def api_request_schedule():
     """Запрос графика"""
     try:
@@ -412,5 +426,14 @@ def get_stock(telegram_id):
             if row.get('id') in tracker_id_list:
                 trackers.setdefault(tracker_models.get(row.get('model')),[]).append((row.get('imei'), row.get('serial_number')))
         return trackers
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def get_price_logistic():
+    """Возвращает прайс выездов"""
+    try:
+        return (f'{row.get("city")} - {row.get("cost")}' for row in api_request_price_logistic())
+
     except Exception as err:
         logging.critical(msg='', exc_info=err)

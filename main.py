@@ -40,16 +40,21 @@ commands = [
     'Оплата',
     'Проверки',
     'Чья смена?',
-    'Запас'
+    'Запас',
+    'Прайс'
 ]
-install_commands = [commands[9]]
+install_commands = [commands[9], commands[10]]
 keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
 keyboard_main.add(*[types.KeyboardButton(comm) for comm in commands])
 
 keyboard_install = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
 keyboard_install.add(*[types.KeyboardButton(comm) for comm in install_commands])
 
-install_telegram_id = [int(configs.telegram_malashin_id), int(configs.telegram_sumbulov_id)]
+install_telegram_id = [
+    int(configs.telegram_malashin_id),
+    int(configs.telegram_sumbulov_id),
+    int(configs.telegram_my_930_id)
+]
 
 def check_user(message):
     """Проверяет пользователя на право выполнения команд"""
@@ -950,6 +955,40 @@ def get_stock_handler(message, call_data):
         logging.critical(msg='', exc_info=err)
 
 
+def get_price(message):
+    """Запрашивает тип прайса для вывода"""
+    try:
+        inline_keys = [
+            types.InlineKeyboardButton(
+                text='Выезды',
+                callback_data='get_price_logistics')
+            # types.InlineKeyboardButton(
+            #     text='По дате',
+            #     callback_data='get_numbers_date'),
+        ]
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(*inline_keys)
+        bot.send_message(
+            message.from_user.id,
+            text='Выбери',
+            reply_markup=keyboard
+        )
+    except Exception as err:
+        logging.error(msg='', exc_info=err)
+
+
+def get_price_logistic(message):
+    """Отправляет сообщение с прайсом выездов"""
+    try:
+        api_dj.get_price_logistic()
+        bot.send_message(
+            message.chat.id,
+            text='\n'.join(api_dj.get_price_logistic())
+        )
+    except Exception as err:
+        logging.error(msg='', exc_info=err)
+
+
 def morning_check():
     """
     Утренний скрипт:
@@ -988,7 +1027,7 @@ def schedule_main():
 
 
 @bot.message_handler(content_types=['photo'], func=lambda message: message.chat.type in ['group', 'supergroup'])
-def handle_group_photo(message):
+def handler_group_photo(message):
     file_info = bot.get_file(message.photo[-1].file_id)
     downloaded_file = Image.open(BytesIO(bot.download_file(file_info.file_path)))
     decoded = decode(downloaded_file)
@@ -1094,6 +1133,9 @@ def callback_query(call):
     elif 'payment_get_sim_cards_payers' in call.data:
         get_list_payer_sim_cards(call.message, payer_id=call.data.split()[1])
 
+    elif 'get_price_logistic' in call.data:
+        get_price_logistic(call.message)
+
     elif 'schedule' in call.data:
         schedule_get_human(call.message, call.data)
 
@@ -1122,6 +1164,8 @@ def take_text(message):
             schedule_request_date(message)
         elif message.text.lower() == commands[9].lower():
             get_stock(message)
+        elif message.text.lower() == commands[10].lower():
+            get_price(message)
         else:
             logging.warning(f'func take_text: not understand question: {message.text}')
             bot.send_message(message.chat.id, 'Я не понимаю, к сожалению')
