@@ -961,10 +961,16 @@ def get_price(message):
         inline_keys = [
             types.InlineKeyboardButton(
                 text='Выезды',
-                callback_data='get_price_logistics')
-            # types.InlineKeyboardButton(
-            #     text='По дате',
-            #     callback_data='get_numbers_date'),
+                callback_data='get_price logistics'
+            ),
+            types.InlineKeyboardButton(
+                text='Оборудование',
+                callback_data='get_price trackers'
+            ),
+            types.InlineKeyboardButton(
+                text='Услуги',
+                callback_data='get_price services'
+            )
         ]
         keyboard = types.InlineKeyboardMarkup()
         keyboard.add(*inline_keys)
@@ -977,13 +983,21 @@ def get_price(message):
         logging.error(msg='', exc_info=err)
 
 
-def get_price_logistic(message):
-    """Отправляет сообщение с прайсом выездов"""
+def get_price_type(message, call_data):
+    """Отправляет сообщение с прайсом"""
     try:
-        api_dj.get_price_logistic()
+        target_price = call_data.split()[1]
+        result = str()
+        match target_price:
+            case 'logistics':
+                result = api_dj.get_price_logistic()
+            case 'trackers':
+                result = api_dj.get_price_trackers()
+            case 'services':
+                result = api_dj.get_services()
         bot.send_message(
             message.chat.id,
-            text='\n'.join(api_dj.get_price_logistic())
+            text='\n'.join(result)
         )
     except Exception as err:
         logging.error(msg='', exc_info=err)
@@ -1133,12 +1147,11 @@ def callback_query(call):
     elif 'payment_get_sim_cards_payers' in call.data:
         get_list_payer_sim_cards(call.message, payer_id=call.data.split()[1])
 
-    elif 'get_price_logistic' in call.data:
-        get_price_logistic(call.message)
+    elif 'get_price' in call.data:
+        get_price_type(call.message, call.data)
 
     elif 'schedule' in call.data:
         schedule_get_human(call.message, call.data)
-
 
 
 @bot.message_handler(content_types=['text'])

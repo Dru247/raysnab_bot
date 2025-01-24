@@ -136,10 +136,38 @@ def api_request_price_logistic():
         logging.critical(msg='', exc_info=err)
 
 
+def api_request_price_trackers():
+    """Запрос прайса на оборудование"""
+    try:
+        url = f'http://89.169.136.83/api/v1/price-trackers/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
 def api_request_schedule():
     """Запрос графика"""
     try:
         url = 'http://89.169.136.83/api/v1/schedule/'
+        headers = {"Authorization": f"Token {drf_token}"}
+        response = requests.get(
+            url=url,
+            headers=headers
+        ).json()
+        return response
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def api_request_price_services():
+    """Запрос списка услуг"""
+    try:
+        url = f'http://89.169.136.83/api/v1/services/'
         headers = {"Authorization": f"Token {drf_token}"}
         response = requests.get(
             url=url,
@@ -434,6 +462,24 @@ def get_price_logistic():
     """Возвращает прайс выездов"""
     try:
         return (f'{row.get("city")} - {row.get("cost")}' for row in api_request_price_logistic())
+
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def get_price_trackers():
+    """Возвращает прайс оборудования"""
+    try:
+        return (f'{row.get("tracker_model")} - {row.get("cost")}' for row in api_request_price_trackers())
+
+    except Exception as err:
+        logging.critical(msg='', exc_info=err)
+
+
+def get_services():
+    """Возвращает услуги"""
+    try:
+        return (f'{row.get("service")} - {row.get("cost")}' for row in api_request_price_services())
 
     except Exception as err:
         logging.critical(msg='', exc_info=err)
