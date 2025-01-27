@@ -348,29 +348,54 @@ def get_all_active_sim_cards():
         logging.critical(msg="func api_dj.objects_change_date - error", exc_info=err)
 
 
-def get_first_number_for_change():
+def get_numbers_for_change():
     """Возвращает номер МТС для замены"""
     try:
-        date_now = datetime.datetime.today()
+        mts_id = 2
+        mts_limit_days = 180
+        date_limit = datetime.datetime.today() - datetime.timedelta(days=mts_limit_days)
+        date_limit = date_limit.timestamp()
+        all_sim_mts = [
+            sim for sim in api_request_sim_list()
+            if sim.get('operator') == mts_id
+            and sim.get('number')
+        ]
+        # сим-карты в объектах с истёкшим сроком
         id_terminals_and_dates = {
             row['terminal']: row['date_change_status']
             for row in api_request_object_list()
-            if datetime.datetime.fromisoformat(row['date_change_status']) < date_now
+            if datetime.datetime.fromisoformat(row['date_change_status']).timestamp() < date_limit
             and row['terminal']
             and not row['active']
         }
-        mts_id = 2
         mts_sim_cards = [
-            (row['number'], id_terminals_and_dates[row['terminal']])
-            for row in api_request_sim_list()
-            if row['operator'] == mts_id
-            and row['terminal'] in id_terminals_and_dates
-            and row['number']
+            (sim['number'], id_terminals_and_dates[sim['terminal']])
+            for sim in all_sim_mts
+            if sim['terminal'] in id_terminals_and_dates
+        ]
+        # список потерянных МТС
+        _, sim_not_everywhere = check_sim_cards_in_dj()
+        [
+            mts_sim_cards.append((sim['number'], sim.get('time_create')))
+            for sim in all_sim_mts
+            if sim.get('icc') in sim_not_everywhere
+            and sim.get('operator') == mts_id
+        ]
+        # сим-карты в трекерах на руках с истёкшим сроком
+        tracker_in_hands = [
+            tracker.get('terminal') for tracker in api_request_human_tracker_list()
+            if datetime.datetime.fromisoformat(tracker.get('time_create')).timestamp() < date_limit
+        ]
+        [
+            mts_sim_cards.append((sim.get('number'), sim.get('time_create')))
+            for sim in all_sim_mts
+            if sim.get('terminal') in tracker_in_hands
         ]
         mts_sim_cards.sort(key=lambda a: a[1], reverse=False)
-        return mts_sim_cards[0]
+        return mts_sim_cards
+
     except Exception as err:
-        logging.critical(msg="func api_dj.get_first_number_for_change - error", exc_info=err)
+        logging.critical(msg='', exc_info=err)
 
 
 def get_diff_terminals():

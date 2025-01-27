@@ -260,8 +260,10 @@ def mts_exchange_sim(message, number=False):
     """Выводит первый номер для замены МТС или проверяет введённый и спрашивает про ICC ID"""
     try:
         if not number:
-            number, num_date = api_dj.get_first_number_for_change()
-            bot.send_message(chat_id=message.chat.id, text=f'Номер: {number}\nДата: {num_date}')
+            numbers = api_dj.get_numbers_for_change()
+            number, num_date = numbers[1]
+            text_msg = f'Всего для замены: {len(numbers)} шт.\nСледующий: {number}\nДата: {num_date}'
+            bot.send_message(chat_id=message.chat.id, text=text_msg)
         else:
             number = message.text
             check, number = check_number(number)
@@ -357,19 +359,12 @@ def mts_get_account_balance():
 def mts_check_num_balance(critical=False):
     """Проверяет номера МТС на КРИТИЧЕСКИЙ перерасход и отправляет сотрудникам в чат"""
     try:
-        if critical:
-            balance = configs.critical_balance
-        else:
-            balance = configs.warning_balance
-        records = api_mts.get_balance_numbers(balance)
+        records, extra_money = api_mts.get_balance_numbers(critical)
         if records:
-            records.sort(key=lambda a: a[1], reverse=True)
             msg_text = 'МТС Перерасход:'
-            overspending = 0
             for record in records:
                 number, sim_balance = record
                 msg_text += f'\n{number} - {sim_balance}'
-                overspending += sim_balance - balance
             msgs = cut_msg_telegram(msg_text)
             if critical:
                 with sq.connect(configs.database) as con:
@@ -382,7 +377,7 @@ def mts_check_num_balance(critical=False):
             for chat in chats:
                 for msg in msgs:
                     bot.send_message(chat_id=chat, text=msg)
-            bot.send_message(chat_id=configs.telegram_my_id, text=f'Общий перерасход: {overspending}')
+            bot.send_message(chat_id=configs.telegram_my_id, text=f'Общий перерасход: {extra_money}')
 
     except Exception as err:
         logging.critical(msg='', exc_info=err)
@@ -775,7 +770,7 @@ def check_sim_cards_in_dj(msg_chat_id):
                 chat_id=msg_chat_id,
                 text=msg_one
             )
-        msg_text = f'СИМ-карты без наличия: {len(sim_not_everywhere)}\n' + '\n'.join(sim_not_everywhere)
+        msg_text = f'СИМ-карты не на руках и не в трекерах: {len(sim_not_everywhere)}\n' + '\n'.join(sim_not_everywhere)
         for msg_one in cut_msg_telegram(msg_text):
             bot.send_message(
                 chat_id=msg_chat_id,

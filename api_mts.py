@@ -1,5 +1,6 @@
 from time import sleep
 
+import api_dj
 import configs
 import datetime
 import logging
@@ -492,22 +493,45 @@ def request_balance_numbers(numbers):
         logging.critical(msg="func request_balance_numbers - error", exc_info=True)
 
 
-def get_balance_numbers(crit_balance=0):
+def get_balance_numbers(critical):
     """Возвращает список (Номер, баланс) с возможности отфильтровки"""
     try:
         icc_numbers = get_list_numbers()
-        num_balances = list()
-
+        all_num_balances = list()
+        mts_normal = 28
+        ignore_mts_balance = 56
         while len(icc_numbers) > 1000:
             response_result = request_balance_numbers([num[1] for num in icc_numbers[:1000]])
             for record in response_result:
                 if record.get("remainedAmount"):
-                    if record["remainedAmount"]["amount"] > crit_balance:
-                        num_balances.append((record["id"], record["remainedAmount"]["amount"]))
+                    balance = record["remainedAmount"]["amount"]
+                    if balance > 0:
+                        all_num_balances.append((record["id"], balance))
             icc_numbers = icc_numbers[1000:]
             time.sleep(1)
 
-        return num_balances
+        change_numbers = [sim[0] for sim in api_dj.get_numbers_for_change()]
+        num_balances = list()
+        extra_money = 0
+        if critical:
+            for num in all_num_balances:
+                balance_num = num[1]
+                if balance_num > configs.critical_balance:
+                    num_balances.append(num)
+                    extra_money+= balance_num - configs.critical_balance
+        else:
+
+            for num in all_num_balances:
+                balance_num = num[1]
+                if num[0] not in change_numbers:
+                    if balance_num > mts_normal and balance_num != ignore_mts_balance:
+                        num_balances.append(num)
+                        extra_money+= balance_num - mts_normal
+                    if balance_num < mts_normal:
+                        num_balances.append(num)
+                        extra_money+= balance_num
+        num_balances.sort(key=lambda a: a[1], reverse=True),
+        return num_balances, extra_money
     except Exception as err:
         logging.critical(msg='', exc_info=err)
 
