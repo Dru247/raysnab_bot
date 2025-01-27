@@ -506,24 +506,29 @@ def check_mts_sim_cards(msg_chat_id):
         logging.critical(msg='', exc_info=err)
 
 
-def check_active_mts_sim_cards(msg_chat_id, morning=False):
+def check_active_mts_sim_cards(msg_chat_id=None):
     """Сравнивает активные сим-карты на проекте и на МТС"""
     try:
-        if not morning:
+        id_chats = list()
+        if msg_chat_id:
+            id_chats.append(msg_chat_id)
             bot.send_message(chat_id=msg_chat_id, text='Проверка запущена. Займёт ~1,5 часа')
+        else:
+            id_chats.extend((configs.telegram_maks_id, configs.telegram_my_id))
         dj_mts_sim_cards = set(api_dj.get_all_active_sim_cards())
         numbers_in_hands = {num['contact_rec'] for num in api_dj.api_request_human_contacts()}
         site_mts_sim_cards = set(api_mts.get_all_active_sim_cards())
         site_mts_sim_cards -= numbers_in_hands # убираем активные сим-карты на руках и с тарифами
         sim_cards = dj_mts_sim_cards ^ site_mts_sim_cards
         msg_text = 'Разница блокировки СИМ-карт:\n' + '\n'.join(sim_cards)
-        for msg_one in cut_msg_telegram(msg_text):
-            bot.send_message(
-                chat_id=msg_chat_id,
-                text=msg_one
-            )
+        for id_chat in id_chats:
+            for msg_one in cut_msg_telegram(msg_text):
+                bot.send_message(
+                    chat_id=id_chat,
+                    text=msg_one
+                )
     except Exception as err:
-        logging.critical(msg='func check_active_mts_sim_cards - error', exc_info=err)
+        logging.critical(msg='', exc_info=err)
 
 
 def check_glonasssoft_dj_objects(msg_chat_id):
@@ -1014,7 +1019,7 @@ def morning_check():
         check_mts_sim_cards(msg_chat_id=configs.telegram_job_id)
         check_diff_terminals(msg_chat_id=configs.telegram_job_id)
         check_glonasssoft_dj_objects(msg_chat_id=configs.telegram_job_id)
-        check_active_mts_sim_cards(msg_chat_id=configs.telegram_job_id, morning=True)
+        check_active_mts_sim_cards()
     except Exception as err:
         logging.critical(msg='', exc_info=err)
 
