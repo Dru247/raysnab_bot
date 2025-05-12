@@ -56,6 +56,7 @@ install_telegram_id = [
     int(configs.telegram_my_930_id)
 ]
 
+
 def check_user(message):
     """Проверяет пользователя на право выполнения команд"""
     try:
@@ -316,7 +317,7 @@ def mts_yes_exchange_sim(message, call_data):
         )
         bot.send_message(
             chat_id=message.chat.id,
-            text=f'Подключаем Добровольную блокировку?',
+            text='Подключаем Добровольную блокировку?',
             reply_markup=keyboard
         )
     except Exception as err:
@@ -357,7 +358,7 @@ def mts_get_account_balance():
 
 
 def mts_check_num_balance(critical=False):
-    """Проверяет номера МТС на КРИТИЧЕСКИЙ перерасход и отправляет сотрудникам в чат"""
+    """Проверяет номера МТС на КРИТИЧЕСКИЙ перерасход и отправляет сотрудникам в чат."""
     try:
         records, extra_money = api_mts.get_balance_numbers(critical)
         if records:
@@ -620,7 +621,7 @@ def payment_request_date(message, payer_id=None):
         date_target_now_month = date_now.strftime(f'%Y-%m-{now_month_last_day}')
         date_plus_month = date_now + relativedelta(months=1)
         date_plus_month_last_day = calendar.monthrange(date_plus_month.year, date_plus_month.month)[1]
-        date_target_plus_month  = date_plus_month.strftime(f'%Y-%m-{date_plus_month_last_day}')
+        date_target_plus_month = date_plus_month.strftime(f'%Y-%m-{date_plus_month_last_day}')
         inline_keys = [
             types.InlineKeyboardButton(
                 text=date_target_now_month,
