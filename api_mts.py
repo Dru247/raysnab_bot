@@ -1,11 +1,31 @@
-import api_dj
-import configs
+"""MTS API."""
 import datetime
 import logging
 import random
-import requests
 import sqlite3 as sq
 import time
+from collections import namedtuple
+from math import ceil as math_ceil
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+from classes import ApiMtsResponse, Number, SimCard
+from configs import (DB, MTS_ACCOUNT, MTS_API_REQUEST_TIMEOUT, MTS_LOGIN,
+                     MTS_PASSWORD, MTS_TIME_LIVE_TOKEN, MTS_URL_API)
+
+BLOCK_SERVICE_NUMBER = 'BL0005'
+FIRST_BLOCK_SERVICE_NUMBER = 'BL0008'
+
+
+def timer_sleep(func):
+    """Таймер сна между запросами к API."""
+    def wrapper(*args, **kwargs):
+        time.sleep(1.1)
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 def exception_handler(func):
@@ -21,54 +41,86 @@ def exception_handler(func):
 
 
 @exception_handler
-def request_new_token():
-    login = configs.mts_login
-    password = configs.mts_password
-    time_live_token = 86400
-    url = "https://api.mts.ru/token"
-    params = {
-        "grant_type": "client_credentials",
-        "validity_period": time_live_token
-    }
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    response = requests.post(
-        url=url,
-        auth=(login, password),
-        headers=headers,
-        params=params
-        )
-    token = response.json()["access_token"]
-    with sq.connect(configs.database) as con:
+@timer_sleep
+def request_new_token(session):
+    """Запрашивает новый Токен, удаляет старый из БД."""
+    url = MTS_URL_API + 'token'
+    response = session.post(url=url, timeout=MTS_API_REQUEST_TIMEOUT)
+    return response.json().get('access_token')
+
+
+@exception_handler
+def get_token():
+    """Проверяет действующий Токен на актуальность по дате."""
+    with sq.connect(DB) as con:
         cur = con.cursor()
-        cur.execute("DELETE FROM tokens")
         cur.execute(
-            "INSERT INTO tokens (token) VALUES (?)",
+            '''
+            SELECT token FROM tokens
+            WHERE datetime_creation > datetime('now', '-1 day')
+            '''
+        )
+        result = cur.fetchone()
+    if result:
+        return result[0]
+    with requests.Session() as session:
+        retries = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504]
+        )
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        session.headers = {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+        session.auth = MTS_LOGIN, MTS_PASSWORD
+        session.params = {
+            'grant_type': 'client_credentials',
+            'validity_period': MTS_TIME_LIVE_TOKEN
+        }
+        token = request_new_token(session=session)
+
+    with sq.connect(DB) as con:
+        cur = con.cursor()
+        cur.execute('DELETE FROM tokens')
+        cur.execute(
+            'INSERT INTO tokens (token) VALUES (?)',
             (token,)
         )
     return token
 
 
 @exception_handler
-def get_token():
-    with sq.connect(configs.database) as con:
-        cur = con.cursor()
-        cur.execute("SELECT token FROM tokens WHERE datetime_creation > datetime('now', '-1 day')")
-        result = cur.fetchone()
-    if result:
-        return result[0]
-    else:
-        return request_new_token()
+def get_balance():
+    """Возвращает баланс аккаунта. API запрос."""
+    url = (f'{MTS_URL_API}b2b/v1/Bills/CheckBalanceByAccount?'
+           f'fields=MOAF&accountNo={MTS_ACCOUNT}')
+    token = get_token()
+    with requests.Session() as session:
+        retries = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504]
+        )
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        session.headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+        response = session.get(
+            url=url,
+            timeout=MTS_API_REQUEST_TIMEOUT
+        )
+    return (response.json()[0].get('customerAccountBalance')[0]
+            .get('remainedAmount').get('amount'))
 
 
 @exception_handler
-def get_status_request(event_id):
-    token = get_token()
-    url = "https://api.mts.ru/b2b/v1/Product/CheckRequestStatusByUUID"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    }
+@timer_sleep
+def get_status_request(session, event_id):
+    """Запрос на статус прошедшей операции."""
+    url = MTS_URL_API + 'b2b/v1/Product/CheckRequestStatusByUUID'
     js_data = {
         "relatedParty": [
             {"characteristic": []},
@@ -76,89 +128,54 @@ def get_status_request(event_id):
         ],
         "validFor": {}
     }
-    response = requests.post(
+    response = session.post(
         url=url,
-        headers=headers,
-        json=js_data
+        json=js_data,
+        timeout=MTS_API_REQUEST_TIMEOUT
     )
-    response = response.json()
-    return response
+    return response.json()
 
 
 @exception_handler
-def check_status_request(event_id):
-    """Проверка статуса выполнения API запроса"""
-    statuses = ["Faulted", "Completed", "InProgress"]
+def check_status_request(session, number):
+    """Проверка статуса выполнения API запроса."""
+    event_id = number.api_response.text
+    statuses = ['Faulted', 'Completed', 'InProgress']
     check_status = statuses[2]
     check_text = str()
     check_attempt = 60
     count_attempts = 0
 
     while check_status == statuses[2] and count_attempts <= check_attempt:
-        response = get_status_request(event_id)
-        check_status = response.get("relatedParty")[0].get("status")
-        check_text = response.get("relatedParty")[0].get("characteristic")[-1].get("value")
+        result = get_status_request(session, event_id)
+        check_status = result.get('relatedParty')[0].get('status')
+        check_text = (result.get('relatedParty')[0]
+                      .get('characteristic')[-1].get('value'))
         count_attempts += 1
-        time.sleep(1)
 
     if count_attempts > check_attempt:
-        success = False
-        text = "Превышен лимит проверок статуса обращения"
+        number.api_response.success = False
+        number.api_response.text = 'Превышен лимит проверок статуса обращения'
     elif check_status == statuses[0]:
-        success = False
-        text = check_text
+        number.api_response.success = False
+        number.api_response.text = check_text
     elif check_status == statuses[1]:
-        success = True
-        text = "Положительный ответ от сервера"
+        number.api_response.success = True
+        number.api_response.text = 'Положительный ответ от сервера'
     else:
-        success = False
-        text = "Неизвестная ошибка"
+        number.api_response.success = False
+        number.api_response.text = 'Неизвестная ошибка'
         logging.warning(
-            f"check_status_request: {event_id};{check_status};"
-            f"{check_text};{count_attempts}"
+            f'check_status_request: {event_id};{check_status};'
+            f'{check_text};{count_attempts}'
         )
-    return success, text
 
 
+@timer_sleep
 @exception_handler
-def request_balance(account):
-    token = get_token()
-    url = f"https://api.mts.ru/b2b/v1/Bills/CheckBalanceByAccount?fields=MOAF&accountNo={account}"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    }
-    response = requests.get(
-        url=url,
-        headers=headers
-    )
-    response = response.json()
-    logging.info(f"request_balance - response: {response}")
-    return response
-
-
-@exception_handler
-def get_balance():
-    account = "277702602686"
-    response = request_balance(account)
-    if "fault" in response:
-        error, result = 1, "Неверный запрос"
-    else:
-        balance = response[0]["customerAccountBalance"][0]["remainedAmount"]["amount"]
-        error, result = 0, balance
-    return error, result
-
-
-@exception_handler
-def change_service_request(number, service_id, action):
-    """API Запрос на изменение сервиса в номере"""
-    token = get_token()
-    url = f"https://api.mts.ru/b2b/v1/Product/ModifyProduct?msisdn={number}"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json"
-    }
+def change_service_request(session, number, service_id, action):
+    """API Запрос на изменение сервиса в номере."""
+    url = f'{MTS_URL_API}b2b/v1/Product/ModifyProduct?msisdn={number}'
     js_data = {
         "characteristic": [{"name": "MobileConnectivity"}],
         "item": [{
@@ -172,55 +189,73 @@ def change_service_request(number, service_id, action):
             }
         }]
     }
-    response = requests.post(
+    response = session.post(
         url=url,
-        headers=headers,
-        json=js_data
+        json=js_data,
+        timeout=MTS_API_REQUEST_TIMEOUT
     )
-    response = response.json()
-    return response
+    return response.json()
 
 
 @exception_handler
-def change_service_handler(number, service_id, action):
+def change_service_handler(session, number, service_id, action):
     """Обработчик запроса на изменение сервиса в номере."""
-    response = change_service_request(number, service_id, action)
-    if 'fault' in response:
-        logging.info(f'change_service error - response: {response}')
-        success = False
-        text = 'Неверный запрос'
-    else:
-        text = response.get('eventID')
-        success = True
-    return success, text
+    result = change_service_request(session, number.number, service_id, action)
+    if 'fault' in result:
+        logging.info(f'change_service error - response: {result}')
+        return ApiMtsResponse(success=False, text='Неверный запрос')
+    return ApiMtsResponse(success=True, text=result.get('eventID'))
 
 
 @exception_handler
-def add_block(number):
-    """Добавление блокировке на номере."""
-    service_id = "BL0005"
-    action = "create"
-    success, result_text = change_service_handler(number, service_id, action)
-    return success, result_text
+def turn_service_numbers(numbers, add_service, service_id=None):
+    """Алгоритм обработки нескольких номеров на изменение сервиса."""
+    if service_id is None:
+        service_id = BLOCK_SERVICE_NUMBER
+    if not isinstance(numbers, list):
+        numbers = [numbers]
 
-
-@exception_handler
-def del_block(number):
-    """Удаление блокировки на номере."""
-    service_id = 'BL0005'
-    action = 'delete'
-    success, result_text = change_service_handler(number, service_id, action)
-    return success, result_text
-
-
-@exception_handler
-def change_service_later_request(number, service_id, action, dt_action):
     token = get_token()
-    url = f"https://api.mts.ru/b2b/v1/Product/ModifyProduct?msisdn={number}"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json"
-    }
+    with requests.Session() as session:
+        retries = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504]
+        )
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        session.headers = {
+            'Authorization': f'Bearer {token}',
+            'Accept': 'application/json'
+        }
+
+        for number in numbers:
+            if add_service:
+                action = 'create'
+            else:
+                action = 'delete'
+
+            number.api_response = change_service_handler(
+                session, number, service_id, action
+            )
+
+        session.headers.update({'Content-Type': 'application/json'})
+
+        for number in numbers:  # Проверяет EventID у успешных запросов
+            if number.api_response.success:
+                check_status_request(session, number)
+
+
+@timer_sleep
+@exception_handler
+def change_service_later_request(
+        session,
+        number,
+        service_id,
+        action,
+        dt_action
+):
+    """API Запрос на изменение сервиса в номере с отсрочкой."""
+    url = f'{MTS_URL_API}b2b/v1/Product/ModifyProduct?msisdn={number}'
     js_data = {
         "characteristic": [{"name": "MobileConnectivity"}],
         "item": [{
@@ -235,281 +270,351 @@ def change_service_later_request(number, service_id, action, dt_action):
             }
         }]
     }
-    response = requests.post(
+    response = session.post(
         url=url,
-        headers=headers,
-        json=js_data
+        json=js_data,
+        timeout=MTS_API_REQUEST_TIMEOUT
     )
-    response = response.json()
-    logging.info(f"change_service_later_request - response: {response}")
-    return response
+    return response.json()
 
 
 @exception_handler
-def change_service_later_handler(number, service_id, action, dt_action):
-    """Обработчик запроса на изменение сервиса в номере с отсрочкой"""
-    response = change_service_later_request(number, service_id, action, dt_action)
-    if "fault" in response:
-        logging.info(f"change_service_later error - response: {response}")
-        success = False
-        text = "Неверный запрос"
+def change_service_later_handler(
+        session, number, service_id, action, dt_action
+):
+    """Обработчик запроса на изменение сервиса в номере с отсрочкой."""
+    result = change_service_later_request(
+        session, number.number, service_id, action, dt_action
+    )
+    response = ApiMtsResponse(
+        success=None,
+        text=None
+    )
+    if 'fault' in result:
+        logging.info(
+            f'change_service_later error: {number.number} result: {result}'
+        )
+        response.success = False
+        response.text = 'Неверный запрос'
     else:
-        text = response.get("eventID")
-        success = True
-    return success, text
+
+        response.success = True
+        response.text = result.get('eventID')
+
+    number.api_response = response
 
 
 @exception_handler
-def del_block_random_hours(number):
-    """Удаляет блокировку на номере рандом от 3-х до 12 часов"""
-    service_id = 'BL0005'
-    action = 'delete'
-    dt_action = datetime.datetime.now() + datetime.timedelta(hours=random.randint(3, 12))
-    dt_action = dt_action.isoformat()
-    success, result_text = change_service_later_handler(number, service_id, action, dt_action)
-    return success, result_text
+def turn_service_numbers_later(
+        numbers, add_service, service_id=None, dt_action=None
+):
+    """Алгоритм обработки нескольких номеров на изменение сервиса по дате."""
+    if not isinstance(numbers, list):
+        numbers = [numbers]
 
+    if service_id is None:
+        service_id = BLOCK_SERVICE_NUMBER
 
-@exception_handler
-def request_vacant_sim_cards(number='79162905452', last_icc_id=''):
-    """API запрос списка 'болванок'"""
     token = get_token()
-    url = 'https://api.mts.ru/b2b/v1/Resources/GetAvailableSIM'
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "accept": "*/*"
-    }
-    js_data = {"Msisdn": number, "SearchPattern": f"%{last_icc_id}"}
-    response = requests.post(
-        url=url,
-        headers=headers,
-        json=js_data
-    )
-    response = response.json()
-    return response
+    with requests.Session() as session:
+        retries = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504]
+        )
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        session.headers = {
+            'Authorization': f'Bearer {token}',
+            'Accept': 'application/json'
+        }
+
+        for number in numbers:
+            if dt_action is None:
+                dt_action = datetime.datetime.now() + datetime.timedelta(
+                    hours=random.randint(3, 12)
+                )
+                dt_action = dt_action.isoformat()
+
+            if add_service:
+                action = 'create'
+            else:
+                action = 'delete'
+
+            change_service_later_handler(
+                session, number, service_id, action, dt_action
+            )
 
 
 @exception_handler
-def get_vacant_sim_cards():
-    """Выдаёт обработанный список ICC 'болванок'."""
-    request_list = request_vacant_sim_cards()
-    return [sim_card.get('iccId') for sim_card in request_list.get('simList')]
-
-
-@exception_handler
-def request_list_numbers(page_num, account="277702602686", page_size=1000):
+@timer_sleep
+def request_list_numbers(session, page_num):
     """API запрос списка ICC + Number."""
-    token = get_token()
-    url = ("https://api.mts.ru/b2b/v1/Service/HierarchyStructure"
-           f"?account={account}&pageNum={page_num}&pageSize={page_size}")
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json"
-    }
-    response = requests.get(
+    page_size = 1000
+    url = ('https://api.mts.ru/b2b/v1/Service/HierarchyStructure'
+           f'?account={MTS_ACCOUNT}&pageNum={page_num}&pageSize={page_size}')
+    response = session.get(
         url=url,
-        headers=headers
+        timeout=MTS_API_REQUEST_TIMEOUT
     )
-    response = response.json()
-    return response
+    return response.json()
 
 
 @exception_handler
-def api_request_number_services(number):
-    """Возвращает список услуг у номера"""
+def get_list_numbers_class() -> list:
+    """Возвращает полный список Номеров с СИМ-картами."""
     token = get_token()
-    url = ("https://api.mts.ru/b2b/v1/Product/ProductInfo?category.name=MobileConnectivity"
-           f"&marketSegment.characteristic.name=MSISDN&marketSegment.characteristic.value={number}"
-           "&productOffering.actionAllowed=none"
-           "&productOffering.productSpecification.productSpecificationType.name=block&applyTimeZone=true")
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json"
-    }
-    response = requests.get(
-        url=url,
-        headers=headers
-    )
-    response = response.json()
-    return response
-
-
-@exception_handler
-def get_list_numbers():
-    """Возвращает обработанный список ICC + Number"""
     pagination = True
     numbers = list()
     page_num = 1
 
-    while pagination:
-        response = request_list_numbers(page_num)
-        try:
-            pagination = response[0]["partyRole"][0]["customerAccount"][0].get("href")
-            [numbers.append((number["product"]["productCharacteristic"][1]["value"], number["product"]["productSerialNumber"])) for number in response[0]["partyRole"][0]["customerAccount"][0]["productRelationship"]]
-            page_num += 1
-            time.sleep(1)
-        except Exception as err:
-            logging.critical(
-                msg=f'response = {response}',
-                exc_info=err
+    with requests.Session() as session:
+        retries = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504]
+        )
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        session.headers = {
+            'Authorization': f'Bearer {token}',
+            'Accept': 'application/json'
+        }
+
+        while pagination:
+            response = request_list_numbers(
+                session=session,
+                page_num=page_num
             )
+            pagination = (response[0].get('partyRole')[0]
+                          .get('customerAccount')[0].get('href'))
+            js_nums = (response[0].get('partyRole')[0]
+                       .get('customerAccount')[0].get('productRelationship'))
+            for number in js_nums:
+                numbers.append(
+                    Number(
+                        number=(number.get('product')
+                                .get('productSerialNumber')),
+                        sim_card=SimCard(
+                            icc=(number.get('product')
+                                 .get('productCharacteristic')[1].get('value'))
+                        )
+                    )
+                )
+            page_num += 1
 
-    return numbers
+        return numbers
 
 
 @exception_handler
-def get_list_all_icc():
-    """Возвращает полный список ICC ((ICC + Numbers) + 'болванки')"""
-    list_icc_numbers = get_list_numbers()
-    list_icc_numbers.extend([(icc, None) for icc in get_vacant_sim_cards()])
-    return list_icc_numbers
+@timer_sleep
+def request_vacant_sim_cards(number='79162905452', icc_id=''):
+    """API запрос списка сим-карт без номера (болванка)."""
+    token = get_token()
+    url = MTS_URL_API + '/v1/Resources/GetAvailableSIM'
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'accept': '*/*'
+    }
+    js_data = {"Msisdn": number, "SearchPattern": f"%{icc_id}"}
+    response = requests.post(
+        url=url,
+        headers=headers,
+        json=js_data,
+        timeout=MTS_API_REQUEST_TIMEOUT
+    )
+    return response.json()
 
 
 @exception_handler
-def get_vacant_sim_card_exchange(number, last_icc_id):
-    response = request_vacant_sim_cards(number, last_icc_id)
+def get_vacant_sim_cards():
+    """Выдаёт обработанный список сим-карт."""
+    return [
+        SimCard(icc=sim_card.get('iccId')) for sim_card
+        in request_vacant_sim_cards().get('simList')
+    ]
+
+
+@exception_handler
+def get_list_all_mts_sim_cards():
+    """Возвращает полный список СИМ-карт (+болванки)."""
+    return get_list_numbers_class() + get_vacant_sim_cards()
+
+
+@exception_handler
+def get_vacant_sim_card_exchange(number, icc_id):
+    """Обработчик поиска пустой СИМ-карты."""
+    response = request_vacant_sim_cards(number, icc_id)
+    vacant_sim_response = namedtuple(
+        'vacant_sim_response',
+        ['success', 'text', 'icc', 'imsi']
+    )
     if 'fault' in response:
-        error, result, text = 1, 0, 'Неверный запрос'
-    else:
-        sim_card = response.get("simList")
-        if not sim_card:
-            error, result, text = 0, 0, 'Нет доступной сим-карты'
-        elif len(sim_card) > 1:
-            error, result, text = 0, 0, 'Сим-карт больше 1'
-        else:
-            error, result, text = 0, 1, f'{sim_card[0].get("iccId")} {sim_card[0].get("imsi")}'
-    return result, result, text
+        return vacant_sim_response(
+            success=False,
+            text='Неверный запрос',
+            icc=None,
+            imsi=None
+        )
+    sim_card = response.get('simList')
+    if not sim_card:
+        return vacant_sim_response(
+            success=False,
+            text='Нет доступной сим-карты',
+            icc=None,
+            imsi=None
+        )
+    return vacant_sim_response(
+        success=True,
+        text=None,
+        icc=sim_card[0].get('iccId'),
+        imsi=sim_card[0].get('imsi')
+    )
 
 
+@timer_sleep
 @exception_handler
 def request_exchange_sim_card(number, imsi):
+    """API запрос на перезапись номера на новую СИМ-карту."""
     token = get_token()
-    url = 'https://api.mts.ru/b2b/v1/Resources/ChangeSIMCard'
+    url = MTS_URL_API + '/v1/Resources/ChangeSIMCard'
     headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "accept": "text/plain"
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json',
+        'accept': 'text/plain'
     }
     js_data = {"Msisdn": number, "newSimImsi": imsi}
     response = requests.post(
         url=url,
         headers=headers,
-        json=js_data
+        json=js_data,
+        timeout=MTS_API_REQUEST_TIMEOUT
     )
     return response.text
 
 
 @exception_handler
 def get_exchange_sim_card(number, imsi):
-    """Проверяет наличие блокировки, заменять сим-карту на номере"""
-    result_check_block = get_block_info(number)
-    time.sleep(1)
-    logging.info(msg=f'result_check_block:{result_check_block}')
-    _, result, _ = result_check_block
-    if result:
-        response = del_block(number)
-        time.sleep(60)
-        logging.info(msg=f'result_del_block:{response}')
+    """Проверяет наличие блокировки, заменять сим-карту на номере."""
+    get_block_info(number)
+    logging.info(msg=f'exchange_result_check_block: {number.block}')
+    if number.block:
+        turn_service_numbers(numbers=number, add_service=False)
+        logging.info(
+            msg=(f'result_del_block: {number.api_response.success} '
+                 f'{number.api_response.text}')
+        )
     response = request_exchange_sim_card(number, imsi)
     logging.info(msg=f'request_exchange_sim_card: {response}')
 
 
+@timer_sleep
 @exception_handler
-def get_block_info(number):
-    service_id = 'BL0005'
-    error, result, text = False, False, str()
-    response = api_request_number_services(number)
-    if response:
-        if 'fault' in response:
-            error, text = True, 'Неверный запрос'
-            logging.warning(msg=f'number:{number}, response:{response}')
-        else:
-            for service in response:
-                if service.get("externalID") == service_id:
-                    date_block = service.get("validFor").get("startDateTime")[:10]
-                    result, text = True, date_block
-                    break
-    else:
-        logging.warning(msg=f'number:{number}, response:{response}')
-    return error, result, text
-
-
-@exception_handler
-def request_balance_numbers(numbers):
-    token = get_token()
-    url = "https://api.mts.ru/b2b/v1/Bills/CheckCharges?isBulk=true"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json"
-    }
-    js_data = [{"id": number} for number in numbers]
-    response = requests.post(
-        url=url,
-        headers=headers,
-        json=js_data
+def api_request_number_services(session, number: int):
+    """Возвращает список услуг номера."""
+    url = (
+        'https://api.mts.ru/b2b/v1/Product/ProductInfo'
+        '?category.name=MobileConnectivity'
+        '&marketSegment.characteristic.name='
+        f'MSISDN&marketSegment.characteristic.value={number}'
+        '&productOffering.actionAllowed=none'
+        '&productOffering.productSpecification.productSpecificationType.name='
+        'block&applyTimeZone=true'
     )
-    response = response.json()
-    return response
+    response = session.get(
+        url=url,
+        timeout=MTS_API_REQUEST_TIMEOUT
+    )
+    return response.json()
 
 
 @exception_handler
-def get_balance_numbers(critical):
-    """Возвращает список (Номер, баланс) с фильтром."""
-    icc_numbers = get_list_numbers()
-    all_num_balances = list()
-    mts_normal = 28
-    ignore_mts_balance = 29.75, 56
-    while len(icc_numbers) > 1000:
-        response_result = request_balance_numbers([num[1] for num in icc_numbers[:1000]])
-        for record in response_result:
-            if record.get("remainedAmount"):
-                balance = record["remainedAmount"]["amount"]
-                if balance > 0:
-                    all_num_balances.append((record["id"], balance))
-        icc_numbers = icc_numbers[1000:]
-        time.sleep(1)
+def get_block_info(numbers):
+    """Установка информацию о наличии, дате блокировки на номере/номерах."""
+    token = get_token()
+    services_id = BLOCK_SERVICE_NUMBER, FIRST_BLOCK_SERVICE_NUMBER
 
-    change_numbers = [sim[0] for sim in api_dj.get_numbers_for_change()]
-    num_balances = list()
-    extra_money = 0
-    if critical:
-        for num in all_num_balances:
-            balance_num = num[1]
-            if balance_num > configs.critical_balance:
-                num_balances.append(num)
-                extra_money+= balance_num - configs.critical_balance
-    else:
-        for num in all_num_balances:
-            balance_num = num[1]
-            if num[0] not in change_numbers:
-                if balance_num > mts_normal and balance_num not in ignore_mts_balance:
-                    num_balances.append(num)
-                    extra_money+= balance_num - mts_normal
-                if balance_num < mts_normal:
-                    num_balances.append(num)
-                    extra_money+= balance_num
-    num_balances.sort(key=lambda a: a[1], reverse=True),
-    return num_balances, extra_money
+    if not isinstance(numbers, list):
+        numbers = [numbers]
 
+    with (requests.Session() as session):
+        retries = Retry(total=3, backoff_factor=1)
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        session.headers = {
+            'Authorization': f'Bearer {token}',
+            'Accept': 'application/json'
+        }
 
-@exception_handler
-def get_all_active_sim_cards():
-    """Возвращает список активных номеров"""
-    numbers = get_list_numbers()
-    id_services = 'BL0005', 'BL0008'
-    active_numbers = list()
-    for num, number in enumerate(numbers):
-        time.sleep(1)
-        number = number[1]
-        response = api_request_number_services(number)
-        if 'fault' in response:
-            logging.warning(f'get_all_active_sim_cards - {number} response: {response}')
-            active_numbers.append(number)
-        else:
-            for service in response:
-                if service.get('externalID') in id_services:
-                    break
+        len_nums = len(numbers)
+        for i, number in enumerate(numbers, start=1):
+            if i == 1 or i % 500 == 0 or i == len_nums:
+                logging.info(f'{i} number')
+            result = api_request_number_services(
+                session=session,
+                number=number.number
+            )
+            if result:
+                if 'fault' in result:
+                    logging.warning(
+                        msg=f'number:{number.number}, response:{result}'
+                    )
+                else:
+                    for service in result:
+                        if service.get('externalID') in services_id:
+                            date_block = (service.get('validFor')
+                                          .get('startDateTime'))
+                            number.block = True
+                            number.block_date = (datetime.datetime
+                                                 .fromisoformat(date_block))
             else:
-                active_numbers.append(number)
+                number.block = False
 
-    return active_numbers
+
+@timer_sleep
+@exception_handler
+def request_balance_numbers(session, numbers):
+    """API запрос на баланс номеров."""
+    url = MTS_URL_API + 'b2b/v1/Bills/CheckCharges?isBulk=true'
+    js_data = [{'id': number} for number in numbers]
+    response = session.post(
+        url=url,
+        json=js_data,
+        timeout=MTS_API_REQUEST_TIMEOUT
+    )
+    return response.json()
+
+
+
+@exception_handler
+def set_balance_numbers() -> list:
+    """Возвращает список Номеров с балансом."""
+    numbers = get_list_numbers_class()
+    token = get_token()
+    result_numbers = list()
+    with requests.Session() as session:
+        retries = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504]
+        )
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        session.headers = {
+            'Authorization': f'Bearer {token}',
+            'Accept': 'application/json'
+        }
+
+        max_numbers_in_request = 1000
+        for i in range(math_ceil(len(numbers) / max_numbers_in_request)):
+            modul_left = i * max_numbers_in_request
+            modul_right = modul_left + max_numbers_in_request
+            response = request_balance_numbers(
+                session,
+                [number.number for number in numbers[modul_left:modul_right]]
+            )
+            for record in response:
+                if record.get('remainedAmount') is not None:
+                    balance = record.get('remainedAmount').get('amount')
+                    if balance > 0:
+                        result_numbers.append(
+                            Number(number=record.get('id'), balance=balance)
+                        )
+
+    return result_numbers

@@ -13,18 +13,23 @@ telegram_job_id = os.getenv("TELEGRAM_JOB_ID")
 telegram_malashin_id = os.getenv("TELEGRAM_MALASHIN_ID")
 telegram_sumbulov_id = os.getenv("TELEGRAM_SUMBULOV_ID")
 telegram_my_930_id = os.getenv("TELEGRAM_MY_930_ID")
-mts_login = os.getenv("MTS_LOGIN")
-mts_password = os.getenv("MTS_PASSWORD")
+
+MTS_API_REQUEST_TIMEOUT = 10
+MTS_ACCOUNT = os.getenv('MTS_ACCOUNT')
+MTS_LOGIN = os.getenv("MTS_LOGIN")
+MTS_PASSWORD = os.getenv("MTS_PASSWORD")
 mts_number = os.getenv("MTS_NUMBER")
-database = "raysnab.db"
-timezone_my = "Europe/Moscow"
+MTS_TIME_LIVE_TOKEN = os.getenv('TIME_LIVE_TOKEN')
+MTS_URL_API = 'https://api.mts.ru/'
+
+DB = 'raysnab.db'
+timezone_my = 'Europe/Moscow'
 
 imap_yandex = "imap.yandex.ru"
 email_passwords = [
     os.getenv("PASSWORD_EMAIL_ALEHTIN")
 ]
 warning_balance = 28
-critical_balance = 1000
 imap_server_yandex = "imap.yandex.ru"
 ya_mary_email_login = os.getenv("YA_EMAIL_MARY_LOGIN")
 ya_mary_email_password = os.getenv("YA_EMAIL_MARY_PASSWORD")

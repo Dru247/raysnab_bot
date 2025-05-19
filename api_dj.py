@@ -8,6 +8,7 @@ import logging
 import requests
 
 
+URL_API = 'http://89.169.136.83/api/v1/'
 drf_token = configs.token_drf
 
 
@@ -26,7 +27,7 @@ def exception_handler(func):
 @exception_handler
 def api_request_humans():
     """Запрос списка людей."""
-    url = 'http://89.169.136.83/api/v1/humans/'
+    url = URL_API + 'humans/'
     headers = {"Authorization": f"Token {drf_token}"}
     response = requests.get(
         url=url,
@@ -104,6 +105,15 @@ def api_request_object_list():
         headers=headers
     ).json()
     return response
+
+
+@exception_handler
+def api_request_all_active_mts_numbers():
+    """Запрос всех активных номеров МТС."""
+    url = URL_API + 'sim/all-active-mts/'
+    headers = {'Authorization': f'Token {drf_token}'}
+    response = requests.get(url=url, headers=headers)
+    return response.json()
 
 
 @exception_handler
@@ -311,30 +321,30 @@ def get_id_human_for_from_telegram_id(telegram_id):
     return None
 
 
-@exception_handler
-def get_all_active_sim_cards():
-    """Возвращает все активные сим-карты МТС."""
-    date_now = datetime.datetime.today()
-    id_terminals = [
-        row['terminal'] for row in api_request_object_list()
-        if datetime.datetime.fromisoformat(row['date_change_status']) > date_now
-        and row['terminal']
-    ]
-    mts_id = 2
-    mts_sim_cards = [
-        row['number'] for row in api_request_sim_list()
-        if row['operator'] == mts_id
-        and row['terminal'] in id_terminals
-        and row['number']
-    ]
-    return mts_sim_cards
+# @exception_handler
+# def get_all_active_sim_cards():
+#     """Возвращает все активные сим-карты МТС."""
+#     date_now = datetime.datetime.today()
+#     id_terminals = [
+#         row['terminal'] for row in api_request_object_list()
+#         if datetime.datetime.fromisoformat(row['date_change_status']) > date_now
+#         and row['terminal']
+#     ]
+#     mts_id = 2
+#     mts_sim_cards = [
+#         row['number'] for row in api_request_sim_list()
+#         if row['operator'] == mts_id
+#         and row['terminal'] in id_terminals
+#         and row['number']
+#     ]
+#     return mts_sim_cards
 
 
 @exception_handler
 def get_numbers_for_change():
     """Возвращает номер МТС для замены."""
     mts_id = 2
-    mts_limit_days = 180
+    mts_limit_days = 180 - 1
     date_limit = datetime.datetime.today() - datetime.timedelta(days=mts_limit_days)
     date_limit = date_limit.timestamp()
     all_sim_mts = [
