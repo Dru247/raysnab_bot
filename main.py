@@ -49,7 +49,7 @@ commands = [
     'Запас',
     'Прайс'
 ]
-install_commands = [commands[9], commands[10]]
+install_commands = [commands[8], commands[9]]
 keyboard_main = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
 keyboard_main.add(*[types.KeyboardButton(comm) for comm in commands])
 

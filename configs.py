@@ -18,7 +18,6 @@ MTS_API_REQUEST_TIMEOUT = 10
 MTS_ACCOUNT = os.getenv('MTS_ACCOUNT')
 MTS_LOGIN = os.getenv("MTS_LOGIN")
 MTS_PASSWORD = os.getenv("MTS_PASSWORD")
-mts_number = os.getenv("MTS_NUMBER")
 MTS_TIME_LIVE_TOKEN = os.getenv('TIME_LIVE_TOKEN')
 MTS_URL_API = 'https://api.mts.ru/'
 
