@@ -13,7 +13,8 @@ from urllib3.util.retry import Retry
 
 from classes import ApiMtsResponse, Number, SimCard
 from configs import (DB, MTS_ACCOUNT, MTS_API_REQUEST_TIMEOUT, MTS_LOGIN,
-                     MTS_PASSWORD, MTS_TIME_LIVE_TOKEN, MTS_URL_API)
+                     MTS_PASSWORD, MTS_MAIN_NUMBER, MTS_TIME_LIVE_TOKEN,
+                     MTS_URL_API)
 
 BLOCK_SERVICE_NUMBER = 'BL0005'
 FIRST_BLOCK_SERVICE_NUMBER = 'BL0008'
@@ -208,7 +209,7 @@ def change_service_handler(session, number, service_id, action):
 
 
 @exception_handler
-def turn_service_numbers(numbers, add_service, service_id=None):
+def turn_service_numbers(numbers: list | Number, add_service, service_id=None):
     """Алгоритм обработки нескольких номеров на изменение сервиса."""
     if service_id is None:
         service_id = BLOCK_SERVICE_NUMBER
@@ -350,7 +351,7 @@ def turn_service_numbers_later(
 def request_list_numbers(session, page_num):
     """API запрос списка ICC + Number."""
     page_size = 1000
-    url = ('https://api.mts.ru/b2b/v1/Service/HierarchyStructure'
+    url = (MTS_URL_API + 'b2b/v1/Service/HierarchyStructure'
            f'?account={MTS_ACCOUNT}&pageNum={page_num}&pageSize={page_size}')
     response = session.get(
         url=url,
@@ -406,15 +407,15 @@ def get_list_numbers_class() -> list:
 
 @exception_handler
 @timer_sleep
-def request_vacant_sim_cards(number='79162905452', icc_id=''):
+def request_vacant_sim_cards(icc_id=''):
     """API запрос списка сим-карт без номера (болванка)."""
     token = get_token()
-    url = MTS_URL_API + '/v1/Resources/GetAvailableSIM'
+    url = MTS_URL_API + 'b2b/v1/Resources/GetAvailableSIM'
     headers = {
         'Authorization': f'Bearer {token}',
         'accept': '*/*'
     }
-    js_data = {"Msisdn": number, "SearchPattern": f"%{icc_id}"}
+    js_data = {"Msisdn": MTS_MAIN_NUMBER, "SearchPattern": f"%{icc_id}"}
     response = requests.post(
         url=url,
         headers=headers,
@@ -440,9 +441,9 @@ def get_list_all_mts_sim_cards():
 
 
 @exception_handler
-def get_vacant_sim_card_exchange(number, icc_id):
+def get_vacant_sim_card_exchange(icc_id):
     """Обработчик поиска пустой СИМ-карты."""
-    response = request_vacant_sim_cards(number, icc_id)
+    response = request_vacant_sim_cards(icc_id)
     vacant_sim_response = namedtuple(
         'vacant_sim_response',
         ['success', 'text', 'icc', 'imsi']
@@ -472,10 +473,10 @@ def get_vacant_sim_card_exchange(number, icc_id):
 
 @timer_sleep
 @exception_handler
-def request_exchange_sim_card(number, imsi):
+def request_exchange_sim_card(number: str, imsi: str):
     """API запрос на перезапись номера на новую СИМ-карту."""
     token = get_token()
-    url = MTS_URL_API + '/v1/Resources/ChangeSIMCard'
+    url = MTS_URL_API + 'b2b/v1/Resources/ChangeSIMCard'
     headers = {
         'Authorization': f'Bearer {token}',
         'Content-Type': 'application/json',
@@ -492,7 +493,7 @@ def request_exchange_sim_card(number, imsi):
 
 
 @exception_handler
-def get_exchange_sim_card(number, imsi):
+def get_exchange_sim_card(number: Number, imsi: str):
     """Проверяет наличие блокировки, заменять сим-карту на номере."""
     get_block_info(number)
     logging.info(msg=f'exchange_result_check_block: {number.block}')
@@ -502,7 +503,7 @@ def get_exchange_sim_card(number, imsi):
             msg=(f'result_del_block: {number.api_response.success} '
                  f'{number.api_response.text}')
         )
-    response = request_exchange_sim_card(number, imsi)
+    response = request_exchange_sim_card(number.number, imsi)
     logging.info(msg=f'request_exchange_sim_card: {response}')
 
 
@@ -511,7 +512,7 @@ def get_exchange_sim_card(number, imsi):
 def api_request_number_services(session, number: int):
     """Возвращает список услуг номера."""
     url = (
-        'https://api.mts.ru/b2b/v1/Product/ProductInfo'
+        MTS_URL_API + 'b2b/v1/Product/ProductInfo'
         '?category.name=MobileConnectivity'
         '&marketSegment.characteristic.name='
         f'MSISDN&marketSegment.characteristic.value={number}'
@@ -527,7 +528,7 @@ def api_request_number_services(session, number: int):
 
 
 @exception_handler
-def get_block_info(numbers):
+def get_block_info(numbers: Number | list):
     """Установка информацию о наличии, дате блокировки на номере/номерах."""
     token = get_token()
     services_id = BLOCK_SERVICE_NUMBER, FIRST_BLOCK_SERVICE_NUMBER

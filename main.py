@@ -316,7 +316,7 @@ def mts_exchange_sim_second(message, number):
     """Проверяет, запрашивает imsi, введённой сим-карты."""
     icc_id = message.text
     if icc_id.isdigit():
-        vacant_sim_response = api_mts.get_vacant_sim_card_exchange(number, icc_id)
+        vacant_sim_response = api_mts.get_vacant_sim_card_exchange(icc_id)
         if vacant_sim_response.success:
             keyboard = types.InlineKeyboardMarkup()
             keyboard.add(
@@ -341,6 +341,7 @@ def mts_exchange_sim_second(message, number):
 def mts_yes_exchange_sim(message, call_data):
     """Отправляет номер на замену сим-карты, спрашивает про дальнейшую блокировку."""
     number, imsi = call_data.split()[1].split(';')
+    number = Number(number=number)
     api_mts.get_exchange_sim_card(number, imsi)
     keyboard = types.InlineKeyboardMarkup()
     keyboard.add(
@@ -733,7 +734,6 @@ def upload_mega_exel(message):
     while sheet.cell(row=count_row, column=1).value is not None:
         number = sheet.cell(row=count_row, column=1).value
         icc_id = sheet.cell(row=count_row, column=17).value
-        print(number, icc_id)
         count_row += 1
 
     excel_doc.close()
@@ -759,7 +759,6 @@ def upload_sim2m_exel(message):
         number = sheet.cell(row=count_row, column=6).value
         icc_id = sheet.cell(row=count_row, column=7).value
         status = sheet.cell(row=count_row, column=2).value
-        print(number, icc_id, status)
         count_row += 1
 
     excel_doc.close()
