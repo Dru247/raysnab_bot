@@ -377,6 +377,7 @@ def get_list_numbers_class() -> list:
         session.mount('https://', HTTPAdapter(max_retries=retries))
         session.headers = {
             'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json',
             'Accept': 'application/json'
         }
 
@@ -385,8 +386,14 @@ def get_list_numbers_class() -> list:
                 session=session,
                 page_num=page_num
             )
-            pagination = (response[0].get('partyRole')[0]
-                          .get('customerAccount')[0].get('href'))
+            try:
+                pagination = (response[0].get('partyRole')[0]
+                              .get('customerAccount')[0].get('href'))
+            except Exception as err:
+                logging.critical(
+                    f'Pagination error. Response :{response}',
+                    exc_info=err
+                )
             js_nums = (response[0].get('partyRole')[0]
                        .get('customerAccount')[0].get('productRelationship'))
             for number in js_nums:
@@ -546,7 +553,7 @@ def get_block_info(numbers: Number | list):
 
         len_nums = len(numbers)
         for i, number in enumerate(numbers, start=1):
-            if i == 1 or i % 500 == 0 or i == len_nums:
+            if i == 1 or i % 1000 == 0 or i == len_nums:
                 logging.info(f'{i} number')
             result = api_request_number_services(
                 session=session,
